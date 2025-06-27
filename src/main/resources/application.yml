@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: finscope-api
+  r2dbc:
+    url: r2dbc:postgresql://localhost:${DB_PORT}/${DB_NAME}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  sql:
+    init:
+      mode: always
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+server:
+  port: ${SERVER_PORT:9090}
