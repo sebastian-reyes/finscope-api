@@ -1,6 +1,6 @@
 package com.sreyes.finscope.controller;
 
-import com.sreyes.finscope.model.Category;
+import com.sreyes.finscope.model.entity.Category;
 import com.sreyes.finscope.service.CategoryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;

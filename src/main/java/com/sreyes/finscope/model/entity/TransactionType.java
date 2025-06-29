@@ -1,4 +1,4 @@
-package com.sreyes.finscope.model;
+package com.sreyes.finscope.model.entity;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -10,13 +10,13 @@ import org.springframework.data.relational.core.mapping.Table;
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-@Table("categories")
-public class Category {
+@Table("transaction_types")
+public class TransactionType {
 
   @Id
-  @Column("id_category")
+  @Column("id_transaction_type")
   private Long id;
 
-  @Column("name_category")
+  @Column("name_transaction_type")
   private String name;
 }

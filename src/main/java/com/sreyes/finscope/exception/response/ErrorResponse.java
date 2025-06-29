@@ -1,4 +1,4 @@
-package com.sreyes.finscope.exception;
+package com.sreyes.finscope.exception.response;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

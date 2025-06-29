@@ -1,7 +1,7 @@
 package com.sreyes.finscope.service.impl;
 
-import com.sreyes.finscope.exception.CategoryNotFoundException;
-import com.sreyes.finscope.model.Category;
+import com.sreyes.finscope.exception.custom.CategoryNotFoundException;
+import com.sreyes.finscope.model.entity.Category;
 import com.sreyes.finscope.repository.CategoryRepository;
 import com.sreyes.finscope.service.CategoryService;
 import lombok.RequiredArgsConstructor;
