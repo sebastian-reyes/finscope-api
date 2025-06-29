@@ -1,6 +1,6 @@
 package com.sreyes.finscope.service;
 
-import com.sreyes.finscope.model.Category;
+import com.sreyes.finscope.model.entity.Category;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
