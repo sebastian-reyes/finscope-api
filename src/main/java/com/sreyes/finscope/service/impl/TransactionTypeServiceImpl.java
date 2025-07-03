@@ -4,6 +4,7 @@ import com.sreyes.finscope.exception.custom.TransactionTypeNotFoundException;
 import com.sreyes.finscope.model.entity.TransactionType;
 import com.sreyes.finscope.repository.TransactionTypeRepository;
 import com.sreyes.finscope.service.TransactionTypeService;
+import com.sreyes.finscope.util.constants.Constants;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
@@ -25,6 +26,6 @@ public class TransactionTypeServiceImpl implements TransactionTypeService {
     return transactionTypeRepository.findById(id)
         .switchIfEmpty(Mono
             .error(new TransactionTypeNotFoundException(
-                "Transaction Type not found with id: " + id)));
+                Constants.TRANSACTION_TYPE_NOT_FOUND + id)));
   }
 }

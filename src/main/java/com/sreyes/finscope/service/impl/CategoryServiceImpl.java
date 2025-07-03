@@ -4,6 +4,7 @@ import com.sreyes.finscope.exception.custom.CategoryNotFoundException;
 import com.sreyes.finscope.model.entity.Category;
 import com.sreyes.finscope.repository.CategoryRepository;
 import com.sreyes.finscope.service.CategoryService;
+import com.sreyes.finscope.util.constants.Constants;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
@@ -24,7 +25,7 @@ public class CategoryServiceImpl implements CategoryService {
   public Mono<Category> findCategoryById(Long id) {
     return categoryRepository.findById(id)
         .switchIfEmpty(Mono
-            .error(new CategoryNotFoundException("Category not found with id: " + id)));
+            .error(new CategoryNotFoundException(Constants.CATEGORY_NOT_FOUND + id)));
   }
 
   @Override
@@ -40,7 +41,7 @@ public class CategoryServiceImpl implements CategoryService {
             return categoryRepository.deleteById(id);
           } else {
             return Mono
-                .error(new CategoryNotFoundException("Category not found with id: " + id));
+                .error(new CategoryNotFoundException(Constants.CATEGORY_NOT_FOUND + id));
           }
         });
   }

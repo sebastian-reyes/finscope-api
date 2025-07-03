@@ -1,6 +1,7 @@
 package com.sreyes.finscope.exception.handler;
 
 import com.sreyes.finscope.exception.custom.CategoryNotFoundException;
+import com.sreyes.finscope.exception.custom.TransactionNotFoundException;
 import com.sreyes.finscope.exception.custom.TransactionTypeNotFoundException;
 import com.sreyes.finscope.exception.response.ErrorResponse;
 import org.springframework.http.HttpStatus;
@@ -35,4 +36,16 @@ public class GlobalExceptionHandler {
         HttpStatus.NOT_FOUND.value()
     );
   }
+
+  @ExceptionHandler(TransactionNotFoundException.class)
+  @ResponseStatus(HttpStatus.NOT_FOUND)
+  @ResponseBody
+  public ErrorResponse handleTransactionNotFoundException(TransactionNotFoundException ex) {
+    return new ErrorResponse(
+        ex.getMessage(),
+        LocalDateTime.now(),
+        HttpStatus.NOT_FOUND.value()
+    );
+  }
+
 }
