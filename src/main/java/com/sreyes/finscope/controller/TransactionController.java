@@ -1,5 +1,6 @@
 package com.sreyes.finscope.controller;
 
+import com.sreyes.finscope.model.dto.TransactionResponseDTO;
 import com.sreyes.finscope.model.entity.Transaction;
 import com.sreyes.finscope.service.TransactionService;
 import lombok.RequiredArgsConstructor;
@@ -22,12 +23,12 @@ public class TransactionController {
   private final TransactionService transactionService;
 
   @GetMapping
-  public Flux<Transaction> getAllTransactions() {
+  public Flux<TransactionResponseDTO> getAllTransactions() {
     return transactionService.getAllTransactions();
   }
 
   @GetMapping("/{id}")
-  public Mono<Transaction> getTransactionById(@PathVariable Long id) {
+  public Mono<TransactionResponseDTO> getTransactionById(@PathVariable Long id) {
     return transactionService.getTransactionById(id);
   }
 
