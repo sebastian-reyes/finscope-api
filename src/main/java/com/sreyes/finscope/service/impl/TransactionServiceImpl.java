@@ -46,16 +46,9 @@ public class TransactionServiceImpl implements TransactionService {
 
   @Override
   public Flux<TransactionResponseDTO> getTransactionsByTypeId(Long id) {
-    return transactionRepository.findByTransactionType(id)
+    return transactionRepository.findTransactionsByTypeId(id)
         .switchIfEmpty(Mono.error(new TransactionNotFoundException(
-            Constants.TRANSACTION_NOT_FOUND + id)))
-        .flatMap(transaction -> categoryRepository.findById(transaction.getCategoryId())
-            .flatMap(category -> transactionTypeRepository
-                .findById(transaction.getTransactionTypeId())
-                .map(transactionType -> mapperUtil
-                    .buildTransactionResponseDTO(transaction, category, transactionType))
-            )
-        );
+            Constants.TRANSACTION_NOT_FOUND + id)));
   }
 
   @Override
