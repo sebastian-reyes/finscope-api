@@ -1,9 +1,7 @@
 package com.sreyes.finscope.service.impl;
 
 import com.sreyes.finscope.exception.custom.TransactionNotFoundException;
-import com.sreyes.finscope.model.dto.CategoryDTO;
 import com.sreyes.finscope.model.dto.TransactionResponseDTO;
-import com.sreyes.finscope.model.dto.TransactionTypeDTO;
 import com.sreyes.finscope.model.entity.Transaction;
 import com.sreyes.finscope.repository.CategoryRepository;
 import com.sreyes.finscope.repository.TransactionRepository;
@@ -37,6 +35,20 @@ public class TransactionServiceImpl implements TransactionService {
   @Override
   public Flux<TransactionResponseDTO> getAllTransactions() {
     return transactionRepository.findAll()
+        .flatMap(transaction -> categoryRepository.findById(transaction.getCategoryId())
+            .flatMap(category -> transactionTypeRepository
+                .findById(transaction.getTransactionTypeId())
+                .map(transactionType -> mapperUtil
+                    .buildTransactionResponseDTO(transaction, category, transactionType))
+            )
+        );
+  }
+
+  @Override
+  public Flux<TransactionResponseDTO> getTransactionsByTypeId(Long id) {
+    return transactionRepository.findByTransactionType(id)
+        .switchIfEmpty(Mono.error(new TransactionNotFoundException(
+            Constants.TRANSACTION_NOT_FOUND + id)))
         .flatMap(transaction -> categoryRepository.findById(transaction.getCategoryId())
             .flatMap(category -> transactionTypeRepository
                 .findById(transaction.getTransactionTypeId())
