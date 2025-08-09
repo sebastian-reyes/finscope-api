@@ -1,6 +1,8 @@
 package com.sreyes.finscope.service.impl;
 
+import com.sreyes.finscope.exception.custom.CategoryNotFoundException;
 import com.sreyes.finscope.exception.custom.TransactionNotFoundException;
+import com.sreyes.finscope.exception.custom.TransactionTypeNotFoundException;
 import com.sreyes.finscope.model.dto.TransactionResponseDTO;
 import com.sreyes.finscope.model.entity.Transaction;
 import com.sreyes.finscope.repository.CategoryRepository;
@@ -45,10 +47,31 @@ public class TransactionServiceImpl implements TransactionService {
   }
 
   @Override
-  public Flux<TransactionResponseDTO> getTransactionsByTypeId(Long id) {
-    return transactionRepository.findTransactionsByTypeId(id)
-        .switchIfEmpty(Mono.error(new TransactionNotFoundException(
-            Constants.TRANSACTION_NOT_FOUND + id)));
+  public Flux<TransactionResponseDTO> getAllTransactionsByTypeId(Long id) {
+    return transactionRepository.findByTransactionTypeId(id)
+        .flatMap(transaction -> categoryRepository.findById(transaction.getCategoryId())
+            .switchIfEmpty(Mono.error(new CategoryNotFoundException(
+                Constants.CATEGORY_NOT_FOUND + transaction.getCategoryId())))
+            .flatMap(category -> transactionTypeRepository.findById(transaction.getTransactionTypeId())
+                .switchIfEmpty(Mono.error(new TransactionTypeNotFoundException(
+                    Constants.TRANSACTION_TYPE_NOT_FOUND + transaction.getTransactionTypeId())))
+                .map(transactionType -> mapperUtil.buildTransactionResponseDTO(transaction, category, transactionType))
+            )
+        );
+  }
+
+  @Override
+  public Flux<TransactionResponseDTO> getAllTransactionsByCategoryId(Long id) {
+    return transactionRepository.findByCategoryId(id)
+        .flatMap(transaction -> categoryRepository.findById(transaction.getCategoryId())
+            .switchIfEmpty(Mono.error(new CategoryNotFoundException(
+                Constants.CATEGORY_NOT_FOUND + transaction.getCategoryId())))
+            .flatMap(category -> transactionTypeRepository.findById(transaction.getTransactionTypeId())
+                .switchIfEmpty(Mono.error(new TransactionTypeNotFoundException(
+                    Constants.TRANSACTION_TYPE_NOT_FOUND + transaction.getTransactionTypeId())))
+                .map(transactionType -> mapperUtil.buildTransactionResponseDTO(transaction, category, transactionType))
+            )
+        );
   }
 
   @Override

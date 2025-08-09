@@ -37,7 +37,13 @@ public class TransactionController {
   @GetMapping("/transaction-type/{id}")
   @ResponseStatus(HttpStatus.OK)
   public Flux<TransactionResponseDTO> getTransactionsByTypeId(@PathVariable Long id) {
-    return transactionService.getTransactionsByTypeId(id);
+    return transactionService.getAllTransactionsByTypeId(id);
+  }
+
+  @GetMapping("/category/{id}")
+  @ResponseStatus(HttpStatus.OK)
+  public Flux<TransactionResponseDTO> getTransactionsByCategoryId(@PathVariable Long id) {
+    return transactionService.getAllTransactionsByCategoryId(id);
   }
 
   @PostMapping

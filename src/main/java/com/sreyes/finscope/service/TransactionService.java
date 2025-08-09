@@ -9,7 +9,8 @@ public interface TransactionService {
 
   Mono<Transaction> createTransaction(Transaction transaction);
   Flux<TransactionResponseDTO> getAllTransactions();
-  Flux<TransactionResponseDTO> getTransactionsByTypeId(Long id);
+  Flux<TransactionResponseDTO> getAllTransactionsByTypeId(Long id);
+  Flux<TransactionResponseDTO> getAllTransactionsByCategoryId(Long id);
   Mono<TransactionResponseDTO> getTransactionById(Long id);
   Mono<Void> deleteTransactionById(Long id);
   Mono<Transaction> updateTransaction(Long id, Transaction transaction);
