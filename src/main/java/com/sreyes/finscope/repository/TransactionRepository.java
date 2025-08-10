@@ -11,6 +11,13 @@ public interface TransactionRepository extends R2dbcRepository<Transaction, Long
   Flux<Transaction> findByTransactionTypeId(Long id);
 
   @Query("SELECT * FROM transactions WHERE category_id = :id")
-  Flux <Transaction> findByCategoryId(Long categoryId);
+  Flux<Transaction> findByCategoryId(Long categoryId);
+
+  @Query("""
+      SELECT * FROM transactions
+      WHERE EXTRACT(YEAR FROM date) = :year AND EXTRACT(MONTH FROM date) = :month
+      """)
+  Flux<Transaction> findByMonthAndYear(int year, int month);
 
 }
+

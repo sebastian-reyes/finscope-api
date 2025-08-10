@@ -117,4 +117,18 @@ public class TransactionServiceImpl implements TransactionService {
         })
         .flatMap(transactionRepository::save);
   }
+
+  @Override
+  public Flux<TransactionResponseDTO> getTransactionsByMonthAndYear(Integer month, Integer year) {
+    return transactionRepository.findByMonthAndYear(year, month)
+        .flatMap(transaction -> categoryRepository.findById(transaction.getCategoryId())
+            .switchIfEmpty(Mono.error(new CategoryNotFoundException(
+                Constants.CATEGORY_NOT_FOUND + transaction.getCategoryId())))
+            .flatMap(category -> transactionTypeRepository.findById(transaction.getTransactionTypeId())
+                .switchIfEmpty(Mono.error(new TransactionTypeNotFoundException(
+                    Constants.TRANSACTION_TYPE_NOT_FOUND + transaction.getTransactionTypeId())))
+                .map(transactionType -> mapperUtil.buildTransactionResponseDTO(transaction, category, transactionType))
+            )
+        );
+  }
 }

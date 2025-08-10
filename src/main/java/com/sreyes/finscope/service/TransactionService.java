@@ -14,4 +14,5 @@ public interface TransactionService {
   Mono<TransactionResponseDTO> getTransactionById(Long id);
   Mono<Void> deleteTransactionById(Long id);
   Mono<Transaction> updateTransaction(Long id, Transaction transaction);
+  Flux<TransactionResponseDTO> getTransactionsByMonthAndYear(Integer month, Integer year);
 }
