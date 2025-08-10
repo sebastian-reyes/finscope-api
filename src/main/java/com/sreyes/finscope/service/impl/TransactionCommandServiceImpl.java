@@ -1,20 +1,12 @@
 package com.sreyes.finscope.service.impl;
 
-import com.sreyes.finscope.exception.custom.CategoryNotFoundException;
-import com.sreyes.finscope.exception.custom.DateNotFoundException;
 import com.sreyes.finscope.exception.custom.TransactionNotFoundException;
-import com.sreyes.finscope.exception.custom.TransactionTypeNotFoundException;
-import com.sreyes.finscope.model.dto.TransactionResponseDTO;
 import com.sreyes.finscope.model.entity.Transaction;
-import com.sreyes.finscope.repository.CategoryRepository;
 import com.sreyes.finscope.repository.TransactionRepository;
-import com.sreyes.finscope.repository.TransactionTypeRepository;
 import com.sreyes.finscope.service.TransactionCommandService;
 import com.sreyes.finscope.util.constants.Constants;
-import com.sreyes.finscope.util.mapper.MapperUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.LocalDateTime;
