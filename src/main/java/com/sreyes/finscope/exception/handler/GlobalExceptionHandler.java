@@ -1,6 +1,7 @@
 package com.sreyes.finscope.exception.handler;
 
 import com.sreyes.finscope.exception.custom.CategoryNotFoundException;
+import com.sreyes.finscope.exception.custom.DateNotFoundException;
 import com.sreyes.finscope.exception.custom.TransactionNotFoundException;
 import com.sreyes.finscope.exception.custom.TransactionTypeNotFoundException;
 import com.sreyes.finscope.exception.response.ErrorResponse;
@@ -45,6 +46,17 @@ public class GlobalExceptionHandler {
         ex.getMessage(),
         LocalDateTime.now(),
         HttpStatus.NOT_FOUND.value()
+    );
+  }
+
+  @ExceptionHandler(DateNotFoundException.class)
+  @ResponseStatus(HttpStatus.BAD_REQUEST)
+  @ResponseBody
+  public ErrorResponse handleDateNotFoundException(DateNotFoundException ex) {
+    return new ErrorResponse(
+        ex.getMessage(),
+        LocalDateTime.now(),
+        HttpStatus.BAD_REQUEST.value()
     );
   }
 
