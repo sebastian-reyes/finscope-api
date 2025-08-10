@@ -2,7 +2,8 @@ package com.sreyes.finscope.controller;
 
 import com.sreyes.finscope.model.dto.TransactionResponseDTO;
 import com.sreyes.finscope.model.entity.Transaction;
-import com.sreyes.finscope.service.TransactionService;
+import com.sreyes.finscope.service.TransactionCommandService;
+import com.sreyes.finscope.service.TransactionQueryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -23,48 +24,48 @@ import reactor.core.publisher.Mono;
 @RequestMapping("/transactions")
 public class TransactionController {
 
-  private final TransactionService transactionService;
+  private final TransactionCommandService transactionCommandService;
+  private final TransactionQueryService transactionQueryService;
+
+  @PostMapping
+  public Mono<Transaction> createTransaction(@RequestBody Transaction transaction) {
+    return transactionCommandService.createTransaction(transaction);
+  }
+
+  @PatchMapping("/{id}")
+  public Mono<Transaction> updateTransaction(@PathVariable Long id, @RequestBody Transaction transaction) {
+    return transactionCommandService.updateTransaction(id, transaction);
+  }
+
+  @DeleteMapping("/{id}")
+  public Mono<Void> deleteTransactionById(@PathVariable Long id) {
+    return transactionCommandService.deleteTransactionById(id);
+  }
 
   @GetMapping
   public Flux<TransactionResponseDTO> getAllTransactions() {
-    return transactionService.getAllTransactions();
+    return transactionQueryService.getAllTransactions();
   }
 
   @GetMapping("/{id}")
   public Mono<TransactionResponseDTO> getTransactionById(@PathVariable Long id) {
-    return transactionService.getTransactionById(id);
+    return transactionQueryService.getTransactionById(id);
   }
 
   @GetMapping("/transaction-type/{id}")
   @ResponseStatus(HttpStatus.OK)
   public Flux<TransactionResponseDTO> getTransactionsByTypeId(@PathVariable Long id) {
-    return transactionService.getAllTransactionsByTypeId(id);
+    return transactionQueryService.getAllTransactionsByTypeId(id);
   }
 
   @GetMapping("/category/{id}")
   @ResponseStatus(HttpStatus.OK)
   public Flux<TransactionResponseDTO> getTransactionsByCategoryId(@PathVariable Long id) {
-    return transactionService.getAllTransactionsByCategoryId(id);
-  }
-
-  @PostMapping
-  public Mono<Transaction> createTransaction(@RequestBody Transaction transaction) {
-    return transactionService.createTransaction(transaction);
-  }
-
-  @PatchMapping("/{id}")
-  public Mono<Transaction> updateTransaction(@PathVariable Long id, @RequestBody Transaction transaction) {
-    return transactionService.updateTransaction(id, transaction);
-  }
-
-  @DeleteMapping("/{id}")
-  public Mono<Void> deleteTransactionById(@PathVariable Long id) {
-    return transactionService.deleteTransactionById(id);
+    return transactionQueryService.getAllTransactionsByCategoryId(id);
   }
 
   @GetMapping("/filter")
   public Flux<TransactionResponseDTO> getTransactionsByMonthAndYear(@RequestParam Integer month, @RequestParam Integer year) {
-    return transactionService.getTransactionsByMonthAndYear(month, year);
+    return transactionQueryService.getTransactionsByMonthAndYear(month, year);
   }
-
 }
