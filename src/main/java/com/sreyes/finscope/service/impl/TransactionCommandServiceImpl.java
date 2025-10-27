@@ -5,13 +5,18 @@ import com.sreyes.finscope.model.entity.Transaction;
 import com.sreyes.finscope.repository.TransactionRepository;
 import com.sreyes.finscope.service.TransactionCommandService;
 import com.sreyes.finscope.util.constants.Constants;
+import java.time.LocalDateTime;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
-import java.time.LocalDateTime;
-import java.util.Optional;
-
+/**
+ * Implementación del servicio {@link TransactionCommandService} para la gestión de comandos de transacciones.
+ * Proporciona operaciones reactivas para crear, actualizar y eliminar transacciones.
+ * Utiliza {@link TransactionRepository} para el acceso a datos.
+ * Lanza {@link TransactionNotFoundException} cuando no se encuentra una transacción.
+ */
 @Service
 @RequiredArgsConstructor
 public class TransactionCommandServiceImpl implements TransactionCommandService {

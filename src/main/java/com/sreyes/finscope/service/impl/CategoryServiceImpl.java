@@ -10,6 +10,12 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+/**
+ * Implementación del servicio {@link CategoryService} para la gestión de categorías.
+ * Proporciona operaciones reactivas para consultar, guardar y eliminar categorías.
+ * Utiliza {@link CategoryRepository} para el acceso a datos.
+ * Lanza {@link CategoryNotFoundException} cuando no se encuentra una categoría.
+ */
 @Service
 @RequiredArgsConstructor
 public class CategoryServiceImpl implements CategoryService {
