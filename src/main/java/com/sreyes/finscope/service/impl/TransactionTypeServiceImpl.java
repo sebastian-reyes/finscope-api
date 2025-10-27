@@ -10,6 +10,12 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+/**
+ * Implementación del servicio {@link TransactionTypeService} para la gestión de tipos de transacción.
+ * Proporciona operaciones reactivas para consultar todos los tipos y buscar por identificador.
+ * Utiliza {@link TransactionTypeRepository} para el acceso a datos.
+ * Lanza {@link TransactionTypeNotFoundException} cuando no se encuentra un tipo de transacción.
+ */
 @Service
 @RequiredArgsConstructor
 public class TransactionTypeServiceImpl implements TransactionTypeService {
