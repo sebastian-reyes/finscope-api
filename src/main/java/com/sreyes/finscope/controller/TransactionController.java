@@ -121,7 +121,8 @@ public class TransactionController {
    */
   @GetMapping("/filter")
   public Flux<TransactionResponseDto> getTransactionsByMonthAndYear(@RequestParam Integer month,
-                                                                    @RequestParam Integer year) {
-    return transactionQueryService.getTransactionsByMonthAndYear(month, year);
+                                                                    @RequestParam Integer year,
+                                                                    @RequestParam Long transactionTypeId) {
+    return transactionQueryService.getTransactionsByMonthAndYear(month, year, transactionTypeId);
   }
 }
