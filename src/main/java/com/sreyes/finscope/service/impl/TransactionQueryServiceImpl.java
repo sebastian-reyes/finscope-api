@@ -91,22 +91,23 @@ public class TransactionQueryServiceImpl implements TransactionQueryService {
   }
 
   @Override
-  public Flux<TransactionResponseDto> getTransactionsByMonthAndYear(Integer month, Integer year) {
+  public Flux<TransactionResponseDto> getTransactionsByMonthAndYear(Integer month, Integer year,
+                                                                    Long transactionTypeId) {
     return Mono.just(month)
         .filter(m -> m >= 1 && m <= 12)
         .switchIfEmpty(Mono.error(new DateNotFoundException(Constants.INVALID_MONTH)))
         .flatMapMany(validMonth -> transactionRepository.findByMonthAndYear(year, validMonth)
+            .filter(tx -> transactionTypeId.equals(tx.getTransactionTypeId()))
             .flatMap(transaction -> categoryRepository.findById(transaction.getCategoryId())
                 .switchIfEmpty(Mono.error(new CategoryNotFoundException(
                     Constants.CATEGORY_NOT_FOUND + transaction.getCategoryId())))
-                .flatMap(category -> transactionTypeRepository.findById(transaction
-                        .getTransactionTypeId())
+                .flatMap(category -> transactionTypeRepository.findById(transaction.getTransactionTypeId())
                     .switchIfEmpty(Mono.error(new TransactionTypeNotFoundException(
                         Constants.TRANSACTION_TYPE_NOT_FOUND + transaction.getTransactionTypeId())))
                     .map(transactionType -> mapperUtil.buildTransactionResponseDto(transaction,
                         category, transactionType))
                 )
-            )
-        );
+            ));
   }
+
 }

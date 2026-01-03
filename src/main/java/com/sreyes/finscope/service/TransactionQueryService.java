@@ -48,5 +48,5 @@ public interface TransactionQueryService {
    * @param year año de la transacción
    * @return flujo reactivo de transacciones filtradas por mes y año
    */
-  Flux<TransactionResponseDto> getTransactionsByMonthAndYear(Integer month, Integer year);
+  Flux<TransactionResponseDto> getTransactionsByMonthAndYear(Integer month, Integer year, Long transactionTypeId);
 }
