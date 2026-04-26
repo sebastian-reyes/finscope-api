@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -59,6 +60,19 @@ public class CategoryController {
   @ResponseStatus(HttpStatus.CREATED)
   public Mono<Category> createCategory(@RequestBody Category category) {
     return categoryService.saveCategory(category);
+  }
+
+  /**
+   * Actualiza una categoría existente.
+   *
+   * @param id       el identificador de la categoría a actualizar.
+   * @param category la categoría con los datos actualizados.
+   * @return un {@link Mono} de {@link Category} con la categoría actualizada.
+   */
+  @PatchMapping("/{id}")
+  @ResponseStatus(HttpStatus.OK)
+  public Mono<Category> updateCategory(@PathVariable Long id, @RequestBody Category category) {
+    return categoryService.updateCategory(id, category);
   }
 
   /**

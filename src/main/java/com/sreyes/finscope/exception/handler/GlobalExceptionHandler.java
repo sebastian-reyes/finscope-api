@@ -2,6 +2,7 @@ package com.sreyes.finscope.exception.handler;
 
 import com.sreyes.finscope.exception.custom.CategoryNotFoundException;
 import com.sreyes.finscope.exception.custom.DateNotFoundException;
+import com.sreyes.finscope.exception.custom.DuplicateCategoryException;
 import com.sreyes.finscope.exception.custom.TransactionNotFoundException;
 import com.sreyes.finscope.exception.custom.TransactionTypeNotFoundException;
 import com.sreyes.finscope.exception.response.ErrorResponse;
@@ -86,6 +87,24 @@ public class GlobalExceptionHandler {
         ex.getMessage(),
         LocalDateTime.now(),
         HttpStatus.BAD_REQUEST.value()
+    );
+  }
+
+  /**
+   * Maneja la excepción {@link DuplicateCategoryException} cuando se intenta crear o actualizar
+   * una categoría que ya existe.
+   *
+   * @param ex la excepción lanzada.
+   * @return una respuesta de error con detalles del incidente.
+   */
+  @ExceptionHandler(DuplicateCategoryException.class)
+  @ResponseStatus(HttpStatus.CONFLICT)
+  @ResponseBody
+  public ErrorResponse handleDuplicatedCategoryException(DuplicateCategoryException ex) {
+    return new ErrorResponse(
+        ex.getMessage(),
+        LocalDateTime.now(),
+        HttpStatus.CONFLICT.value()
     );
   }
 }
