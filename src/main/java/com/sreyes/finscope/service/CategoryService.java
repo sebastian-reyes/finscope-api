@@ -34,6 +34,15 @@ public interface CategoryService {
   Mono<Category> saveCategory(Category category);
 
   /**
+   * Actualiza una categoría existente.
+   *
+   * @param id       identificador de la categoría a actualizar
+   * @param category entidad de categoría con los datos actualizados
+   * @return categoría actualizada envuelta en Mono
+   */
+  Mono<Category> updateCategory(Long id, Category category);
+
+  /**
    * Elimina una categoría por su identificador.
    *
    * @param id identificador de la categoría

@@ -32,29 +32,26 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
   @Override
   public Mono<Void> deleteTransactionById(Long id) {
     return transactionRepository.existsById(id)
-        .flatMap(exists -> {
-          if (Boolean.TRUE.equals(exists)) {
-            return transactionRepository.deleteById(id);
-          } else {
-            return Mono.error(new TransactionNotFoundException(
-                Constants.TRANSACTION_NOT_FOUND + id));
-          }
-        });
+        .filter(Boolean::booleanValue)
+        .flatMap(found -> transactionRepository.deleteById(id).thenReturn(found))
+        .switchIfEmpty(Mono.error(new TransactionNotFoundException(
+            Constants.TRANSACTION_NOT_FOUND + id)))
+        .then();
   }
 
   @Override
-  public Mono<Transaction> updateTransaction(Long id, Transaction newTx) {
+  public Mono<Transaction> updateTransaction(Long id, Transaction newTransaction) {
     return transactionRepository.findById(id)
         .switchIfEmpty(Mono.error(new TransactionNotFoundException(
             Constants.TRANSACTION_NOT_FOUND + id)))
-        .map(existingTx -> {
-          newTx.setId(id);
-          newTx.setDate(
-              Optional.ofNullable(existingTx.getDate())
-                  .or(() -> Optional.ofNullable(newTx.getDate()))
+        .map(existingTransaction -> {
+          newTransaction.setId(id);
+          newTransaction.setDate(
+              Optional.ofNullable(existingTransaction.getDate())
+                  .or(() -> Optional.ofNullable(newTransaction.getDate()))
                   .orElse(LocalDateTime.now())
           );
-          return newTx;
+          return newTransaction;
         })
         .flatMap(transactionRepository::save);
   }
