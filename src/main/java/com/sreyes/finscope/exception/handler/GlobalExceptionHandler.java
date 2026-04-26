@@ -2,6 +2,7 @@ package com.sreyes.finscope.exception.handler;
 
 import com.sreyes.finscope.exception.custom.CategoryNotFoundException;
 import com.sreyes.finscope.exception.custom.DateNotFoundException;
+import com.sreyes.finscope.exception.custom.DuplicateCategoryException;
 import com.sreyes.finscope.exception.custom.TransactionNotFoundException;
 import com.sreyes.finscope.exception.custom.TransactionTypeNotFoundException;
 import com.sreyes.finscope.exception.response.ErrorResponse;
@@ -60,4 +61,14 @@ public class GlobalExceptionHandler {
     );
   }
 
+  @ExceptionHandler(DuplicateCategoryException.class)
+  @ResponseStatus(HttpStatus.CONFLICT)
+  @ResponseBody
+  public ErrorResponse handleDuplicatedCategoryException(DuplicateCategoryException ex) {
+    return new ErrorResponse(
+        ex.getMessage(),
+        LocalDateTime.now(),
+        HttpStatus.CONFLICT.value()
+    );
+  }
 }

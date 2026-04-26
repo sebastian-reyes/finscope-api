@@ -9,5 +9,6 @@ public interface CategoryService {
   Flux<Category> findAllCategories();
   Mono<Category> findCategoryById(Long id);
   Mono<Category> saveCategory(Category category);
+  Mono<Category> updateCategory(Long id, Category category);
   Mono<Void> deleteCategoryById(Long id);
 }
