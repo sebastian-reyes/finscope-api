@@ -10,7 +10,7 @@ import com.sreyes.finscope.repository.TransactionRepository;
 import com.sreyes.finscope.repository.TransactionTypeRepository;
 import com.sreyes.finscope.service.TransactionQueryService;
 import com.sreyes.finscope.util.constants.Constants;
-import com.sreyes.finscope.util.mapper.MapperUtil;
+import com.sreyes.finscope.util.mapper.TransactionMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
@@ -30,7 +30,7 @@ public class TransactionQueryServiceImpl implements TransactionQueryService {
   private final TransactionRepository transactionRepository;
   private final CategoryRepository categoryRepository;
   private final TransactionTypeRepository transactionTypeRepository;
-  private final MapperUtil mapperUtil;
+  private final TransactionMapper transactionMapper;
 
   @Override
   public Flux<TransactionResponseDto> getAllTransactions() {
@@ -38,8 +38,8 @@ public class TransactionQueryServiceImpl implements TransactionQueryService {
         .flatMap(transaction -> categoryRepository.findById(transaction.getCategoryId())
             .flatMap(category -> transactionTypeRepository
                 .findById(transaction.getTransactionTypeId())
-                .map(transactionType -> mapperUtil
-                    .buildTransactionResponseDto(transaction, category, transactionType))
+                .map(transactionType -> transactionMapper.toDto(transaction,
+                    category, transactionType))
             )
         );
   }
@@ -54,7 +54,7 @@ public class TransactionQueryServiceImpl implements TransactionQueryService {
                     .getTransactionTypeId())
                 .switchIfEmpty(Mono.error(new TransactionTypeNotFoundException(
                     Constants.TRANSACTION_TYPE_NOT_FOUND + transaction.getTransactionTypeId())))
-                .map(transactionType -> mapperUtil.buildTransactionResponseDto(transaction,
+                .map(transactionType -> transactionMapper.toDto(transaction,
                     category, transactionType))
             )
         );
@@ -70,7 +70,7 @@ public class TransactionQueryServiceImpl implements TransactionQueryService {
                     .getTransactionTypeId())
                 .switchIfEmpty(Mono.error(new TransactionTypeNotFoundException(
                     Constants.TRANSACTION_TYPE_NOT_FOUND + transaction.getTransactionTypeId())))
-                .map(transactionType -> mapperUtil.buildTransactionResponseDto(transaction,
+                .map(transactionType -> transactionMapper.toDto(transaction,
                     category, transactionType))
             )
         );
@@ -84,8 +84,8 @@ public class TransactionQueryServiceImpl implements TransactionQueryService {
         .flatMap(transaction -> categoryRepository.findById(transaction.getCategoryId())
             .flatMap(category -> transactionTypeRepository
                 .findById(transaction.getTransactionTypeId())
-                .map(transactionType -> mapperUtil
-                    .buildTransactionResponseDto(transaction, category, transactionType))
+                .map(transactionType -> transactionMapper.toDto(transaction, category,
+                    transactionType))
             )
         );
   }
@@ -93,21 +93,28 @@ public class TransactionQueryServiceImpl implements TransactionQueryService {
   @Override
   public Flux<TransactionResponseDto> getTransactionsByMonthAndYear(Integer month, Integer year,
                                                                     Long transactionTypeId) {
-    return Mono.just(month)
+    int currentYear = java.time.LocalDate.now().getYear();
+    int currentMonth = java.time.LocalDate.now().getMonthValue();
+
+    return Mono.justOrEmpty(month)
+        .defaultIfEmpty(currentMonth)
         .filter(m -> m >= 1 && m <= 12)
         .switchIfEmpty(Mono.error(new DateNotFoundException(Constants.INVALID_MONTH)))
-        .flatMapMany(validMonth -> transactionRepository.findByMonthAndYear(year, validMonth)
-            .filter(tx -> transactionTypeId.equals(tx.getTransactionTypeId()))
-            .flatMap(transaction -> categoryRepository.findById(transaction.getCategoryId())
-                .switchIfEmpty(Mono.error(new CategoryNotFoundException(
-                    Constants.CATEGORY_NOT_FOUND + transaction.getCategoryId())))
-                .flatMap(category -> transactionTypeRepository.findById(transaction.getTransactionTypeId())
-                    .switchIfEmpty(Mono.error(new TransactionTypeNotFoundException(
-                        Constants.TRANSACTION_TYPE_NOT_FOUND + transaction.getTransactionTypeId())))
-                    .map(transactionType -> mapperUtil.buildTransactionResponseDto(transaction,
-                        category, transactionType))
-                )
-            ));
+        .flatMapMany(validMonth -> {
+          int validYear = (year == null) ? currentYear : year;
+          return transactionRepository.findByMonthAndYear(validYear, validMonth)
+              .filter(tx -> transactionTypeId == null || transactionTypeId.equals(tx.getTransactionTypeId()))
+              .flatMap(transaction -> categoryRepository.findById(transaction.getCategoryId())
+                  .switchIfEmpty(Mono.error(new CategoryNotFoundException(
+                      Constants.CATEGORY_NOT_FOUND + transaction.getCategoryId())))
+                  .flatMap(category -> transactionTypeRepository.findById(transaction.getTransactionTypeId())
+                      .switchIfEmpty(Mono.error(new TransactionTypeNotFoundException(
+                          Constants.TRANSACTION_TYPE_NOT_FOUND + transaction.getTransactionTypeId())))
+                      .map(transactionType -> transactionMapper.toDto(transaction,
+                          category, transactionType))
+                  )
+              );
+        });
   }
 
 }
