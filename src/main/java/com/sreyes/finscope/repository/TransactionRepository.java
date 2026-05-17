@@ -21,7 +21,6 @@ public interface TransactionRepository extends R2dbcRepository<Transaction, Long
    * @param id identificador del tipo de transacción
    * @return flujo reactivo de transacciones
    */
-  @Query("SELECT * FROM transactions WHERE transaction_type_id = :id")
   Flux<Transaction> findByTransactionTypeId(Long id);
 
   /**
@@ -30,7 +29,6 @@ public interface TransactionRepository extends R2dbcRepository<Transaction, Long
    * @param categoryId identificador de la categoría
    * @return flujo reactivo de transacciones
    */
-  @Query("SELECT * FROM transactions WHERE category_id = :id")
   Flux<Transaction> findByCategoryId(Long categoryId);
 
   /**
