@@ -36,4 +36,7 @@ public class Transaction {
 
   @Column("transaction_type_id")
   private Long transactionTypeId;
+
+  @Column("company_id")
+  private Long companyId;
 }
