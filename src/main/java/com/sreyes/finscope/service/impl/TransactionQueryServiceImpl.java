@@ -84,8 +84,8 @@ public class TransactionQueryServiceImpl implements TransactionQueryService {
         .flatMap(transaction -> categoryRepository.findById(transaction.getCategoryId())
             .flatMap(category -> transactionTypeRepository
                 .findById(transaction.getTransactionTypeId())
-                .map(transactionType -> transactionMapper.toDto(transaction, category,
-                    transactionType))
+                .map(transactionType -> transactionMapper.toDto(transaction,
+                    category, transactionType))
             )
         );
   }
