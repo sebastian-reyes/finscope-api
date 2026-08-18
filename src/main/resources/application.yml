@@ -5,8 +5,5 @@ spring:
     url: r2dbc:postgresql://localhost:${DB_PORT}/${DB_NAME}
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
-  sql:
-    init:
-      mode: always
 server:
   port: ${SERVER_PORT:9090}
