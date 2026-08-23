@@ -1,52 +1,34 @@
 package com.sreyes.finscope.service;
 
-import com.sreyes.finscope.model.dto.TransactionResponseDto;
-import reactor.core.publisher.Flux;
+import com.sreyes.finscope.api.model.TransactionPageResponse;
+import com.sreyes.finscope.api.model.TransactionResponse;
+import com.sreyes.finscope.model.query.TransactionSearchCriteria;
 import reactor.core.publisher.Mono;
 
 /**
  * Servicio para la consulta de transacciones.
- * Define operaciones reactivas para obtener transacciones filtradas por tipo, categoría, fecha o identificador.
+ * Define operaciones reactivas para obtener una transacción concreta y para buscar
+ * transacciones aplicando filtros opcionales, paginación y ordenamiento.
+ * Todas las operaciones están acotadas al usuario propietario de los datos.
  */
 public interface TransactionQueryService {
 
   /**
-   * Obtiene todas las transacciones.
+   * Busca las transacciones que cumplen los criterios indicados.
    *
-   * @return flujo reactivo de transacciones
+   * @param userId   identificador del usuario propietario
+   * @param criteria filtros, paginación y ordenamiento solicitados
+   * @return página de transacciones envuelta en Mono
    */
-  Flux<TransactionResponseDto> getAllTransactions();
-
-  /**
-   * Obtiene todas las transacciones filtradas por tipo.
-   *
-   * @param id identificador del tipo de transacción
-   * @return flujo reactivo de transacciones filtradas por tipo
-   */
-  Flux<TransactionResponseDto> getAllTransactionsByTypeId(Long id);
-
-  /**
-   * Obtiene todas las transacciones filtradas por categoría.
-   *
-   * @param id identificador de la categoría
-   * @return flujo reactivo de transacciones filtradas por categoría
-   */
-  Flux<TransactionResponseDto> getAllTransactionsByCategoryId(Long id);
+  Mono<TransactionPageResponse> searchTransactions(Long userId,
+                                                   TransactionSearchCriteria criteria);
 
   /**
    * Busca una transacción por su identificador.
    *
-   * @param id identificador de la transacción
+   * @param userId identificador del usuario propietario
+   * @param id     identificador de la transacción
    * @return transacción encontrada envuelta en Mono
    */
-  Mono<TransactionResponseDto> getTransactionById(Long id);
-
-  /**
-   * Obtiene transacciones filtradas por mes y año.
-   *
-   * @param month mes de la transacción
-   * @param year año de la transacción
-   * @return flujo reactivo de transacciones filtradas por mes y año
-   */
-  Flux<TransactionResponseDto> getTransactionsByMonthAndYear(Integer month, Integer year, Long transactionTypeId);
+  Mono<TransactionResponse> getTransactionById(Long userId, Long id);
 }

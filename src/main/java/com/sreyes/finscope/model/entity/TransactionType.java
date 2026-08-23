@@ -10,7 +10,8 @@ import org.springframework.data.relational.core.mapping.Table;
 /**
  * Entidad que representa un tipo de transacción en el sistema.
  * Está mapeada a la tabla `transaction_types` en la base de datos.
- * Contiene el identificador único y el nombre del tipo de transacción.
+ * Es un catálogo global y cerrado de dos elementos, ingreso y egreso, porque de él depende
+ * el signo del importe de la transacción.
  */
 @Data
 @AllArgsConstructor
@@ -24,4 +25,11 @@ public class TransactionType {
 
   @Column("name_transaction_type")
   private String name;
+
+  /**
+   * Código estable del tipo, INCOME o EXPENSE. Permite que los clientes no dependan de
+   * los identificadores numéricos del catálogo.
+   */
+  @Column("code")
+  private String code;
 }

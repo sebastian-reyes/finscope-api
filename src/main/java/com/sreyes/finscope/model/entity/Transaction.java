@@ -12,8 +12,9 @@ import org.springframework.data.relational.core.mapping.Table;
 /**
  * Entidad que representa una transacción en el sistema.
  * Está mapeada a la tabla `transactions` en la base de datos.
- * Contiene información como el identificador, monto, descripción,
- * fecha, identificador de categoría y tipo de transacción.
+ * El importe se guarda siempre en positivo; el signo lo aporta el tipo de transacción,
+ * que indica si se trata de un ingreso o de un egreso.
+ * Sus tags se almacenan en la tabla `tags`, que depende de esta.
  */
 @Table("transactions")
 @Data
@@ -31,8 +32,11 @@ public class Transaction {
 
   private LocalDateTime date;
 
-  @Column("category_id")
-  private Long categoryId;
+  /**
+   * Identificador del usuario propietario. Aisla los datos entre cuentas.
+   */
+  @Column("user_id")
+  private Long userId;
 
   @Column("transaction_type_id")
   private Long transactionTypeId;

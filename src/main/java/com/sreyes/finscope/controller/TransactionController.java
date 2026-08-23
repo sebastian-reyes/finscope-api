@@ -1,128 +1,87 @@
 package com.sreyes.finscope.controller;
 
-import com.sreyes.finscope.model.dto.TransactionResponseDto;
-import com.sreyes.finscope.model.entity.Transaction;
+import com.sreyes.finscope.api.TransactionsApi;
+import com.sreyes.finscope.api.model.CreateTransactionRequest;
+import com.sreyes.finscope.api.model.TransactionPageResponse;
+import com.sreyes.finscope.api.model.TransactionResponse;
+import com.sreyes.finscope.api.model.UpdateTransactionRequest;
+import com.sreyes.finscope.model.query.TransactionSearchCriteria;
+import com.sreyes.finscope.security.AuthenticatedUser;
 import com.sreyes.finscope.service.TransactionCommandService;
 import com.sreyes.finscope.service.TransactionQueryService;
+import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PatchMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
-import reactor.core.publisher.Flux;
+import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
-
 
 /**
  * Controlador REST para gestionar operaciones relacionadas con transacciones.
- * Proporciona endpoints para crear, actualizar, eliminar y consultar transacciones.
+ * Implementa el contrato {@link TransactionsApi} generado a partir de la especificación
+ * OpenAPI y mantiene separadas la escritura, delegada en {@link TransactionCommandService},
+ * y la lectura, delegada en {@link TransactionQueryService}. Las transacciones pertenecen a
+ * un usuario, por lo que toda operación resuelve primero el usuario autenticado y se lo
+ * propaga a los servicios.
  */
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/transactions")
-public class TransactionController {
+public class TransactionController implements TransactionsApi {
 
   private final TransactionCommandService transactionCommandService;
   private final TransactionQueryService transactionQueryService;
+  private final AuthenticatedUser authenticatedUser;
 
-  /**
-   * Crea una nueva transacción.
-   *
-   * @param transaction la transacción a crear.
-   * @return un {@link Mono} con la transacción creada.
-   */
-  @PostMapping
-  public Mono<Transaction> createTransaction(@RequestBody Transaction transaction) {
-    return transactionCommandService.createTransaction(transaction);
+  @Override
+  public Mono<ResponseEntity<TransactionPageResponse>> listTransactions(
+      Integer month, Integer year, LocalDateTime dateFrom, LocalDateTime dateTo,
+      Long transactionTypeId, String tag, Integer page, Integer size, String sort,
+      ServerWebExchange exchange) {
+    TransactionSearchCriteria criteria = new TransactionSearchCriteria(month, year, dateFrom,
+        dateTo, transactionTypeId, tag, page, size, sort);
+    return authenticatedUser.currentUserId()
+        .flatMap(userId -> transactionQueryService.searchTransactions(userId, criteria))
+        .map(ResponseEntity::ok);
   }
 
-  /**
-   * Actualiza una transacción existente.
-   *
-   * @param id          el identificador de la transacción.
-   * @param transaction los datos actualizados de la transacción.
-   * @return un {@link Mono} con la transacción actualizada.
-   */
-  @PatchMapping("/{id}")
-  public Mono<Transaction> updateTransaction(@PathVariable Long id,
-                                             @RequestBody Transaction transaction) {
-    return transactionCommandService.updateTransaction(id, transaction);
+  @Override
+  public Mono<ResponseEntity<TransactionResponse>> getTransactionById(Long id,
+                                                                      ServerWebExchange exchange) {
+    return authenticatedUser.currentUserId()
+        .flatMap(userId -> transactionQueryService.getTransactionById(userId, id))
+        .map(ResponseEntity::ok);
   }
 
-  /**
-   * Elimina una transacción por su identificador.
-   *
-   * @param id el identificador de la transacción a eliminar.
-   * @return un {@link Mono} vacío cuando la eliminación se completa.
-   */
-  @DeleteMapping("/{id}")
-  public Mono<Void> deleteTransactionById(@PathVariable Long id) {
-    return transactionCommandService.deleteTransactionById(id);
+  @Override
+  public Mono<ResponseEntity<TransactionResponse>> createTransaction(
+      Mono<CreateTransactionRequest> createTransactionRequest, ServerWebExchange exchange) {
+    return authenticatedUser.currentUserId()
+        .zipWith(createTransactionRequest)
+        .flatMap(tuple -> transactionCommandService.createTransaction(tuple.getT1(),
+                tuple.getT2())
+            .flatMap(transaction -> transactionQueryService.getTransactionById(tuple.getT1(),
+                transaction.getId())))
+        .map(transaction -> ResponseEntity.status(HttpStatus.CREATED).body(transaction));
   }
 
-  /**
-   * Obtiene todas las transacciones.
-   *
-   * @return un {@link Flux} de {@link TransactionResponseDto} con todas las transacciones.
-   */
-  @GetMapping
-  public Flux<TransactionResponseDto> getAllTransactions() {
-    return transactionQueryService.getAllTransactions();
+  @Override
+  public Mono<ResponseEntity<TransactionResponse>> updateTransaction(
+      Long id, Mono<UpdateTransactionRequest> updateTransactionRequest,
+      ServerWebExchange exchange) {
+    return authenticatedUser.currentUserId()
+        .zipWith(updateTransactionRequest)
+        .flatMap(tuple -> transactionCommandService.updateTransaction(tuple.getT1(), id,
+                tuple.getT2())
+            .flatMap(transaction -> transactionQueryService.getTransactionById(tuple.getT1(),
+                transaction.getId())))
+        .map(ResponseEntity::ok);
   }
 
-  /**
-   * Obtiene una transacción por su identificador.
-   *
-   * @param id el identificador de la transacción.
-   * @return un {@link Mono} de {@link TransactionResponseDto} si existe, vacío en caso contrario.
-   */
-  @GetMapping("/{id}")
-  public Mono<TransactionResponseDto> getTransactionById(@PathVariable Long id) {
-    return transactionQueryService.getTransactionById(id);
-  }
-
-  /**
-   * Obtiene todas las transacciones por el identificador de tipo de transacción.
-   *
-   * @param id el identificador del tipo de transacción.
-   * @return un {@link Flux} de {@link TransactionResponseDto} filtradas por tipo.
-   */
-  @GetMapping("/transaction-type/{id}")
-  @ResponseStatus(HttpStatus.OK)
-  public Flux<TransactionResponseDto> getTransactionsByTypeId(@PathVariable Long id) {
-    return transactionQueryService.getAllTransactionsByTypeId(id);
-  }
-
-  /**
-   * Obtiene todas las transacciones por el identificador de categoría.
-   *
-   * @param id el identificador de la categoría.
-   * @return un {@link Flux} de {@link TransactionResponseDto} filtradas por categoría.
-   */
-  @GetMapping("/category/{id}")
-  @ResponseStatus(HttpStatus.OK)
-  public Flux<TransactionResponseDto> getTransactionsByCategoryId(@PathVariable Long id) {
-    return transactionQueryService.getAllTransactionsByCategoryId(id);
-  }
-
-  /**
-   * Obtiene todas las transacciones filtradas por mes y año.
-   *
-   * @param month el mes de la transacción.
-   * @param year  el año de la transacción.
-   * @return un {@link Flux} de {@link TransactionResponseDto} filtradas por mes y año.
-   */
-  @GetMapping("/filter")
-  public Flux<TransactionResponseDto> getTransactionsByMonthAndYear(@RequestParam (required = false) Integer month,
-                                                                    @RequestParam (required = false) Integer year,
-                                                                    @RequestParam Long transactionTypeId) {
-    return transactionQueryService.getTransactionsByMonthAndYear(month, year, transactionTypeId);
+  @Override
+  public Mono<ResponseEntity<Void>> deleteTransaction(Long id, ServerWebExchange exchange) {
+    return authenticatedUser.currentUserId()
+        .flatMap(userId -> transactionCommandService.deleteTransactionById(userId, id))
+        .thenReturn(ResponseEntity.noContent().build());
   }
 }

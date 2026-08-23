@@ -6,6 +6,7 @@ import com.sreyes.finscope.repository.TransactionTypeRepository;
 import com.sreyes.finscope.service.TransactionTypeService;
 import com.sreyes.finscope.util.constants.Constants;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -24,7 +25,7 @@ public class TransactionTypeServiceImpl implements TransactionTypeService {
 
   @Override
   public Flux<TransactionType> findAllTransactionTypes() {
-    return transactionTypeRepository.findAll();
+    return transactionTypeRepository.findAll(Sort.by("id"));
   }
 
   @Override
