@@ -4,343 +4,150 @@ info:
   description: |
     API reactiva de FinScope para la gestion de finanzas personales.
 
-    El modelo soporta categorias jerarquicas, con una unica categoria principal por
-    transaccion, y tags como dimension adicional de clasificacion, de forma que el
-    analisis financiero nunca duplica importes.
-  version: 2.0.0
+    El modelo se reduce a tres piezas: la transaccion, su tipo y sus tags.
+    El tipo es un catalogo cerrado de dos valores, ingreso y egreso, porque de el
+    depende el signo del importe. Los tags son texto libre y pertenecen a una unica
+    transaccion, de modo que clasificar no obliga a mantener un catalogo previo.
+
+    Todos los recursos financieros pertenecen al usuario autenticado y estan aislados
+    entre usuarios. Salvo los endpoints de autenticacion, todas las operaciones exigen
+    un token de acceso.
+  version: 4.0.0
 servers:
   - url: /
     description: Servidor local
+security:
+  - bearerAuth: []
 tags:
-  - name: categories
-    description: Gestion de categorias jerarquicas
-  - name: tags
-    description: Gestion de tags de clasificacion
-  - name: shops
-    description: Gestion de tiendas o comercios
+  - name: auth
+    description: Registro, autenticacion y renovacion de credenciales
   - name: transaction-types
     description: Consulta de tipos de transaccion
   - name: transactions
     description: Gestion y consulta de transacciones
+  - name: tags
+    description: Consulta de los tags en uso
 
 paths:
-  /categories:
-    get:
-      tags: [categories]
-      summary: Lista categorias
-      description: |
-        Devuelve las categorias en formato plano. Por defecto solo incluye las activas.
-        Los filtros rootOnly y parentId son excluyentes entre si.
-      operationId: listCategories
-      parameters:
-        - name: rootOnly
-          in: query
-          description: Si es true devuelve unicamente las categorias raiz, es decir las que no tienen padre
-          required: false
-          schema:
-            type: boolean
-            default: false
-        - name: parentId
-          in: query
-          description: Devuelve unicamente las categorias hijas directas de la categoria indicada
-          required: false
-          schema:
-            type: integer
-            format: int64
-        - $ref: "#/components/parameters/IncludeInactive"
-      responses:
-        "200":
-          description: Listado de categorias
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/CategoryResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
+  /auth/register:
     post:
-      tags: [categories]
-      summary: Crea una categoria
-      operationId: createCategory
+      tags: [auth]
+      summary: Registra un usuario nuevo
+      description: |
+        Crea la cuenta y devuelve directamente las credenciales, de modo que el registro y
+        el inicio de sesion son una sola llamada desde el cliente movil.
+      operationId: register
+      security: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CreateCategoryRequest"
+              $ref: "#/components/schemas/RegisterRequest"
       responses:
         "201":
-          description: Categoria creada
+          description: Usuario registrado
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/CategoryResponse"
+                $ref: "#/components/schemas/AuthResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
 
-  /categories/tree:
-    get:
-      tags: [categories]
-      summary: Obtiene el arbol completo de categorias
-      description: Devuelve las categorias raiz con sus descendientes anidados.
-      operationId: getCategoryTree
-      parameters:
-        - $ref: "#/components/parameters/IncludeInactive"
-      responses:
-        "200":
-          description: Arbol de categorias
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/CategoryTreeResponse"
-
-  /categories/{id}:
-    parameters:
-      - $ref: "#/components/parameters/PathId"
-    get:
-      tags: [categories]
-      summary: Obtiene una categoria por su identificador
-      operationId: getCategoryById
-      responses:
-        "200":
-          description: Categoria encontrada
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CategoryResponse"
-        "404":
-          $ref: "#/components/responses/NotFound"
-    patch:
-      tags: [categories]
-      summary: Actualiza parcialmente una categoria
-      description: Solo se modifican los campos presentes en la peticion.
-      operationId: updateCategory
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateCategoryRequest"
-      responses:
-        "200":
-          description: Categoria actualizada
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CategoryResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "409":
-          $ref: "#/components/responses/Conflict"
-        "422":
-          $ref: "#/components/responses/UnprocessableEntity"
-    delete:
-      tags: [categories]
-      summary: Desactiva una categoria
-      description: |
-        Aplica borrado logico. La categoria se marca como inactiva y deja de listarse,
-        pero se conserva para no romper el historico financiero de las transacciones
-        que la referencian. No se permite desactivar una categoria con hijas activas.
-      operationId: deleteCategory
-      responses:
-        "204":
-          description: Categoria desactivada
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "409":
-          $ref: "#/components/responses/Conflict"
-
-  /tags:
-    get:
-      tags: [tags]
-      summary: Lista tags
-      operationId: listTags
-      parameters:
-        - $ref: "#/components/parameters/IncludeInactive"
-      responses:
-        "200":
-          description: Listado de tags
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/TagResponse"
+  /auth/login:
     post:
-      tags: [tags]
-      summary: Crea un tag
-      operationId: createTag
+      tags: [auth]
+      summary: Inicia sesion
+      operationId: login
+      security: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CreateTagRequest"
+              $ref: "#/components/schemas/LoginRequest"
       responses:
-        "201":
-          description: Tag creado
+        "200":
+          description: Credenciales emitidas
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/TagResponse"
+                $ref: "#/components/schemas/AuthResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "409":
-          $ref: "#/components/responses/Conflict"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
-  /tags/{id}:
-    parameters:
-      - $ref: "#/components/parameters/PathId"
-    get:
-      tags: [tags]
-      summary: Obtiene un tag por su identificador
-      operationId: getTagById
-      responses:
-        "200":
-          description: Tag encontrado
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/TagResponse"
-        "404":
-          $ref: "#/components/responses/NotFound"
-    patch:
-      tags: [tags]
-      summary: Actualiza parcialmente un tag
-      operationId: updateTag
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateTagRequest"
-      responses:
-        "200":
-          description: Tag actualizado
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/TagResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "409":
-          $ref: "#/components/responses/Conflict"
-    delete:
-      tags: [tags]
-      summary: Desactiva un tag
-      description: |
-        Aplica borrado logico. El tag deja de listarse pero se conservan sus
-        asociaciones historicas con transacciones.
-      operationId: deleteTag
-      responses:
-        "204":
-          description: Tag desactivado
-        "404":
-          $ref: "#/components/responses/NotFound"
-
-  /shops:
-    get:
-      tags: [shops]
-      summary: Lista tiendas
-      operationId: listShops
-      parameters:
-        - $ref: "#/components/parameters/IncludeInactive"
-      responses:
-        "200":
-          description: Listado de tiendas
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/ShopResponse"
+  /auth/refresh:
     post:
-      tags: [shops]
-      summary: Crea una tienda
-      operationId: createShop
+      tags: [auth]
+      summary: Renueva el token de acceso
+      description: |
+        Consume el token de refresco indicado y emite un par nuevo. El token consumido queda
+        revocado, de modo que un token robado deja de servir en cuanto el usuario legitimo
+        renueva.
+      operationId: refreshToken
+      security: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CreateShopRequest"
+              $ref: "#/components/schemas/RefreshTokenRequest"
       responses:
-        "201":
-          description: Tienda creada
+        "200":
+          description: Credenciales renovadas
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ShopResponse"
+                $ref: "#/components/schemas/AuthResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "409":
-          $ref: "#/components/responses/Conflict"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
-  /shops/{id}:
-    parameters:
-      - $ref: "#/components/parameters/PathId"
-    get:
-      tags: [shops]
-      summary: Obtiene una tienda por su identificador
-      operationId: getShopById
-      responses:
-        "200":
-          description: Tienda encontrada
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ShopResponse"
-        "404":
-          $ref: "#/components/responses/NotFound"
-    patch:
-      tags: [shops]
-      summary: Actualiza parcialmente una tienda
-      operationId: updateShop
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: Cierra la sesion revocando el token de refresco
+      operationId: logout
+      security: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/UpdateShopRequest"
-      responses:
-        "200":
-          description: Tienda actualizada
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ShopResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "409":
-          $ref: "#/components/responses/Conflict"
-    delete:
-      tags: [shops]
-      summary: Desactiva una tienda
-      description: Aplica borrado logico para conservar el historico de las transacciones asociadas.
-      operationId: deleteShop
+              $ref: "#/components/schemas/RefreshTokenRequest"
       responses:
         "204":
-          description: Tienda desactivada
-        "404":
-          $ref: "#/components/responses/NotFound"
+          description: Sesion cerrada
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /auth/me:
+    get:
+      tags: [auth]
+      summary: Devuelve el usuario autenticado
+      operationId: getCurrentUser
+      responses:
+        "200":
+          description: Usuario autenticado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /transaction-types:
     get:
       tags: [transaction-types]
       summary: Lista los tipos de transaccion
+      description: |
+        Catalogo global cerrado de dos elementos, ingreso y egreso. El cliente deberia
+        apoyarse en el campo code y no en el identificador numerico.
       operationId: listTransactionTypes
       responses:
         "200":
@@ -368,6 +175,25 @@ paths:
                 $ref: "#/components/schemas/TransactionTypeResponse"
         "404":
           $ref: "#/components/responses/NotFound"
+
+  /tags:
+    get:
+      tags: [tags]
+      summary: Lista los tags que el usuario ya ha usado
+      description: |
+        Devuelve los nombres distintos de tag presentes en las transacciones del usuario,
+        ordenados alfabeticamente. Sirve para ofrecer autocompletado al escribir; no es un
+        catalogo, porque los tags se crean al vuelo dentro de cada transaccion.
+      operationId: listTags
+      responses:
+        "200":
+          description: Listado de nombres de tag
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
 
   /transactions:
     get:
@@ -409,13 +235,6 @@ paths:
           schema:
             type: string
             format: date-time
-        - name: categoryId
-          in: query
-          description: Filtra por la categoria principal de la transaccion
-          required: false
-          schema:
-            type: integer
-            format: int64
         - name: transactionTypeId
           in: query
           description: Filtra por tipo de transaccion
@@ -423,20 +242,15 @@ paths:
           schema:
             type: integer
             format: int64
-        - name: shopId
+        - name: tag
           in: query
-          description: Filtra por tienda
+          description: |
+            Devuelve unicamente las transacciones que llevan el tag indicado.
+            La comparacion no distingue mayusculas de minusculas.
           required: false
           schema:
-            type: integer
-            format: int64
-        - name: tagId
-          in: query
-          description: Devuelve unicamente las transacciones asociadas al tag indicado
-          required: false
-          schema:
-            type: integer
-            format: int64
+            type: string
+            maxLength: 70
         - name: page
           in: query
           description: Numero de pagina, empezando en cero
@@ -515,7 +329,7 @@ paths:
       summary: Actualiza parcialmente una transaccion
       description: |
         Solo se modifican los campos presentes en la peticion.
-        Si tagIds esta presente reemplaza por completo los tags de la transaccion;
+        Si tags esta presente reemplaza por completo los tags de la transaccion;
         si se omite, los tags actuales se conservan.
       operationId: updateTransaction
       requestBody:
@@ -539,9 +353,8 @@ paths:
       tags: [transactions]
       summary: Elimina una transaccion
       description: |
-        La transaccion se elimina fisicamente junto con sus asociaciones de tags.
-        A diferencia de categorias, tags y tiendas, una transaccion es el dato
-        historico en si mismo y no una entidad de referencia reutilizable.
+        La transaccion se elimina fisicamente junto con sus tags, que no existen fuera
+        de ella.
       operationId: deleteTransaction
       responses:
         "204":
@@ -550,6 +363,13 @@ paths:
           $ref: "#/components/responses/NotFound"
 
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token de acceso emitido por /auth/login o /auth/refresh
+
   parameters:
     PathId:
       name: id
@@ -559,18 +379,16 @@ components:
       schema:
         type: integer
         format: int64
-    IncludeInactive:
-      name: includeInactive
-      in: query
-      description: Si es true incluye tambien los registros desactivados
-      required: false
-      schema:
-        type: boolean
-        default: false
 
   responses:
     BadRequest:
       description: La peticion es sintacticamente invalida
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unauthorized:
+      description: Las credenciales faltan, han caducado o no son validas
       content:
         application/json:
           schema:
@@ -587,171 +405,121 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
-    UnprocessableEntity:
-      description: La peticion es valida pero incumple una regla de negocio
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ErrorResponse"
 
   schemas:
-    CategoryResponse:
+    RegisterRequest:
       type: object
-      description: Representacion plana de una categoria
-      required: [id, name, active]
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 255
+        password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 72
+          description: |
+            Longitud minima de 8 caracteres. El maximo de 72 lo impone el algoritmo de
+            hashing BCrypt, que ignora los caracteres posteriores.
+        displayName:
+          type: string
+          maxLength: 70
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+
+    RefreshTokenRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+
+    AuthResponse:
+      type: object
+      description: Credenciales del usuario autenticado
+      required: [accessToken, refreshToken, tokenType, expiresIn, user]
+      properties:
+        accessToken:
+          type: string
+          description: Token de acceso que debe enviarse en la cabecera Authorization
+        refreshToken:
+          type: string
+          description: Token de un solo uso para obtener un par nuevo sin volver a autenticarse
+        tokenType:
+          type: string
+          example: Bearer
+        expiresIn:
+          type: integer
+          format: int64
+          description: Segundos de validez restantes del token de acceso
+        user:
+          $ref: "#/components/schemas/UserResponse"
+
+    UserResponse:
+      type: object
+      required: [id, email]
       properties:
         id:
           type: integer
           format: int64
-        name:
+        email:
           type: string
-        parentId:
-          type: integer
-          format: int64
-          description: Identificador de la categoria padre, nulo si es una categoria raiz
-        active:
-          type: boolean
-
-    CategoryTreeResponse:
-      type: object
-      description: Representacion jerarquica de una categoria con sus descendientes
-      required: [id, name, active, children]
-      properties:
-        id:
-          type: integer
-          format: int64
-        name:
+        displayName:
           type: string
-        active:
-          type: boolean
-        children:
-          type: array
-          items:
-            $ref: "#/components/schemas/CategoryTreeResponse"
-
-    CreateCategoryRequest:
-      type: object
-      required: [name]
-      properties:
-        name:
-          type: string
-          minLength: 1
-          maxLength: 70
-        parentId:
-          type: integer
-          format: int64
-          description: Categoria padre opcional. Si se omite la categoria sera raiz.
-
-    UpdateCategoryRequest:
-      type: object
-      properties:
-        name:
-          type: string
-          minLength: 1
-          maxLength: 70
-        parentId:
-          type: integer
-          format: int64
-          description: Nueva categoria padre. No puede generar un ciclo en la jerarquia.
-
-    TagResponse:
-      type: object
-      required: [id, name, active]
-      properties:
-        id:
-          type: integer
-          format: int64
-        name:
-          type: string
-        active:
-          type: boolean
-
-    CreateTagRequest:
-      type: object
-      required: [name]
-      properties:
-        name:
-          type: string
-          minLength: 1
-          maxLength: 70
-
-    UpdateTagRequest:
-      type: object
-      properties:
-        name:
-          type: string
-          minLength: 1
-          maxLength: 70
-
-    ShopResponse:
-      type: object
-      required: [id, name, active]
-      properties:
-        id:
-          type: integer
-          format: int64
-        name:
-          type: string
-        active:
-          type: boolean
-
-    CreateShopRequest:
-      type: object
-      required: [name]
-      properties:
-        name:
-          type: string
-          minLength: 1
-          maxLength: 70
-
-    UpdateShopRequest:
-      type: object
-      properties:
-        name:
-          type: string
-          minLength: 1
-          maxLength: 70
 
     TransactionTypeResponse:
       type: object
-      required: [id, name]
+      required: [id, name, code]
       properties:
         id:
           type: integer
           format: int64
         name:
           type: string
+          description: Nombre para mostrar, por ejemplo Ingreso
+        code:
+          type: string
+          description: |
+            Codigo estable del tipo. Determina el signo del importe en los calculos.
+          enum: [INCOME, EXPENSE]
 
     TransactionResponse:
       type: object
-      required: [id, amount, date, category, transactionType, tags]
+      required: [id, amount, date, transactionType, tags]
       properties:
         id:
           type: integer
           format: int64
         amount:
           type: number
-          description: Importe monetario con dos decimales
+          description: Importe monetario con dos decimales, siempre positivo
         description:
           type: string
         date:
           type: string
           format: date-time
-        category:
-          $ref: "#/components/schemas/CategoryResponse"
         transactionType:
           $ref: "#/components/schemas/TransactionTypeResponse"
-        shop:
-          $ref: "#/components/schemas/ShopResponse"
         tags:
           type: array
-          description: Clasificacion adicional de la transaccion. No afecta al importe.
+          description: Tags de la transaccion, en orden alfabetico
           items:
-            $ref: "#/components/schemas/TagResponse"
+            type: string
 
     CreateTransactionRequest:
       type: object
-      required: [amount, categoryId, transactionTypeId]
+      required: [amount, transactionTypeId]
       properties:
         amount:
           type: number
@@ -764,21 +532,18 @@ components:
           type: string
           format: date-time
           description: Fecha de la transaccion. Si se omite se usa la fecha actual.
-        categoryId:
-          type: integer
-          format: int64
         transactionTypeId:
           type: integer
           format: int64
-        shopId:
-          type: integer
-          format: int64
-        tagIds:
+        tags:
           type: array
-          description: Identificadores de los tags a asociar. Los duplicados se ignoran.
+          description: |
+            Tags de texto libre. Se recortan los espacios sobrantes, se descartan los
+            vacios y los repetidos se ignoran.
           items:
-            type: integer
-            format: int64
+            type: string
+            minLength: 1
+            maxLength: 70
 
     UpdateTransactionRequest:
       type: object
@@ -793,21 +558,18 @@ components:
         date:
           type: string
           format: date-time
-        categoryId:
-          type: integer
-          format: int64
         transactionTypeId:
           type: integer
           format: int64
-        shopId:
-          type: integer
-          format: int64
-        tagIds:
+        tags:
           type: array
-          description: Si esta presente reemplaza por completo los tags de la transaccion.
+          description: |
+            Si esta presente reemplaza por completo los tags de la transaccion.
+            Una lista vacia deja la transaccion sin tags.
           items:
-            type: integer
-            format: int64
+            type: string
+            minLength: 1
+            maxLength: 70
 
     TransactionPageResponse:
       type: object
@@ -840,6 +602,6 @@ components:
           type: integer
         code:
           type: string
-          description: Codigo estable de negocio, por ejemplo CATEGORY_NOT_FOUND
+          description: Codigo estable de negocio, por ejemplo TRANSACTION_NOT_FOUND
         message:
           type: string
