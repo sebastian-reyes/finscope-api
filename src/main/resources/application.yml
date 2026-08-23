@@ -7,3 +7,10 @@ spring:
     password: ${DB_PASSWORD}
 server:
   port: ${SERVER_PORT:9090}
+finscope:
+  security:
+    jwt:
+      secret: ${JWT_SECRET}
+      issuer: finscope-api
+      access-token-ttl: 15m
+      refresh-token-ttl: 30d
