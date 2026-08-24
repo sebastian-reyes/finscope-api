@@ -6,8 +6,9 @@ info:
 
     El modelo se reduce a tres piezas: la transaccion, su tipo y sus tags.
     El tipo es un catalogo cerrado de dos valores, ingreso y egreso, porque de el
-    depende el signo del importe. Los tags son texto libre y pertenecen a una unica
-    transaccion, de modo que clasificar no obliga a mantener un catalogo previo.
+    depende el signo del importe. Los tags son texto libre del usuario y se comparten
+    entre sus transacciones: nacen al escribirlos dentro de una, de modo que clasificar
+    no obliga a mantener un catalogo previo, y se reutilizan cuando vuelve a usarlos.
 
     Todos los recursos financieros pertenecen al usuario autenticado y estan aislados
     entre usuarios. Salvo los endpoints de autenticacion, todas las operaciones exigen
@@ -181,9 +182,11 @@ paths:
       tags: [tags]
       summary: Lista los tags que el usuario ya ha usado
       description: |
-        Devuelve los nombres distintos de tag presentes en las transacciones del usuario,
-        ordenados alfabeticamente. Sirve para ofrecer autocompletado al escribir; no es un
-        catalogo, porque los tags se crean al vuelo dentro de cada transaccion.
+        Devuelve los nombres de tag que el usuario esta usando, ordenados alfabeticamente.
+        Sirve para ofrecer autocompletado al escribir; no hay catalogo que mantener, porque
+        los tags se crean al vuelo dentro de cada transaccion.
+        Un tag aparece una sola vez aunque lo lleven muchas transacciones, y deja de
+        sugerirse cuando ninguna lo usa.
       operationId: listTags
       responses:
         "200":
@@ -538,8 +541,11 @@ components:
         tags:
           type: array
           description: |
-            Tags de texto libre. Se recortan los espacios sobrantes, se descartan los
-            vacios y los repetidos se ignoran.
+            Tags de texto libre. Se recortan los espacios sobrantes, se descartan los que
+            quedan en blanco y los repetidos se ignoran sin distinguir mayusculas.
+            Una cadena vacia no llega a descartarse: la rechaza la longitud minima.
+            Si el usuario ya tiene el tag escrito de otra forma se reutiliza el existente,
+            asi que `casa` sobre un `Casa` previo devuelve `Casa`.
           items:
             type: string
             minLength: 1

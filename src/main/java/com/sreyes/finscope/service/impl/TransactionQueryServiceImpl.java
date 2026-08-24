@@ -5,11 +5,11 @@ import com.sreyes.finscope.api.model.TransactionResponse;
 import com.sreyes.finscope.exception.custom.DateNotFoundException;
 import com.sreyes.finscope.exception.custom.InvalidSortException;
 import com.sreyes.finscope.exception.custom.TransactionNotFoundException;
-import com.sreyes.finscope.model.entity.Tag;
 import com.sreyes.finscope.model.entity.Transaction;
 import com.sreyes.finscope.model.entity.TransactionType;
 import com.sreyes.finscope.model.query.TransactionFilter;
 import com.sreyes.finscope.model.query.TransactionSearchCriteria;
+import com.sreyes.finscope.model.query.TransactionTagName;
 import com.sreyes.finscope.repository.TagRepository;
 import com.sreyes.finscope.repository.TransactionRepository;
 import com.sreyes.finscope.repository.TransactionSearchRepository;
@@ -234,9 +234,9 @@ public class TransactionQueryServiceImpl implements TransactionQueryService {
     return Mono.zip(
         transactionTypeRepository.findAllById(transactionTypeIds)
             .collectMap(TransactionType::getId),
-        tagRepository.findByTransactionIdIn(transactionIds)
-            .collect(Collectors.groupingBy(Tag::getTransactionId,
-                Collectors.mapping(Tag::getName, Collectors.toList()))))
+        tagRepository.findNamesByTransactionIdIn(transactionIds)
+            .collect(Collectors.groupingBy(TransactionTagName::transactionId,
+                Collectors.mapping(TransactionTagName::tagName, Collectors.toList()))))
         .map(references -> transactions.stream()
             .map(transaction -> transactionMapper.toResponse(
                 transaction,

@@ -4,6 +4,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeast;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -14,13 +18,16 @@ import com.sreyes.finscope.exception.custom.TransactionNotFoundException;
 import com.sreyes.finscope.exception.custom.TransactionTypeNotFoundException;
 import com.sreyes.finscope.model.entity.Tag;
 import com.sreyes.finscope.model.entity.Transaction;
+import com.sreyes.finscope.model.entity.TransactionTag;
 import com.sreyes.finscope.model.entity.TransactionType;
 import com.sreyes.finscope.repository.TagRepository;
 import com.sreyes.finscope.repository.TransactionRepository;
+import com.sreyes.finscope.repository.TransactionTagRepository;
 import com.sreyes.finscope.repository.TransactionTypeRepository;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -57,6 +64,9 @@ class TransactionCommandServiceImplTest {
   @Mock
   private TagRepository tagRepository;
 
+  @Mock
+  private TransactionTagRepository transactionTagRepository;
+
   /** Reloj real: la creación sin fecha usa la hora actual y un mock devolvería null. */
   @Spy
   private Clock clock = Clock.systemDefaultZone();
@@ -76,8 +86,32 @@ class TransactionCommandServiceImplTest {
           transaction.setId(10L);
           return Mono.just(transaction);
         });
-    when(tagRepository.deleteByTransactionId(anyLong())).thenReturn(Mono.empty());
-    when(tagRepository.saveAll(any(Iterable.class))).thenReturn(Flux.empty());
+    when(transactionTagRepository.deleteByTransactionId(anyLong())).thenReturn(Mono.empty());
+    when(transactionTagRepository.saveAll(any(Iterable.class))).thenReturn(Flux.empty());
+    when(tagRepository.insertIfAbsent(anyLong(), anyString())).thenReturn(Mono.just(1L));
+    givenCatalogResolvesRequestedNames();
+  }
+
+  /**
+   * Simula el catálogo devolviendo un tag por cada nombre solicitado, con un identificador
+   * derivado de su posición. Basta para comprobar que los enlaces se crean con lo que el
+   * catálogo resolvió, sin depender de identificadores concretos.
+   */
+  private void givenCatalogResolvesRequestedNames() {
+    when(tagRepository.findByUserIdAndLowerNameIn(anyLong(), any()))
+        .thenAnswer(invocation -> {
+          Long userId = invocation.getArgument(0);
+          Collection<String> lowerNames = invocation.getArgument(1);
+          if (lowerNames == null) {
+            return Flux.empty();
+          }
+          List<Tag> tags = new java.util.ArrayList<>();
+          long id = 100L;
+          for (String lowerName : lowerNames) {
+            tags.add(new Tag(id++, userId, lowerName));
+          }
+          return Flux.fromIterable(tags);
+        });
   }
 
   /**
@@ -86,11 +120,22 @@ class TransactionCommandServiceImplTest {
    * @return los nombres de tag guardados, en el orden en que se guardaron
    */
   private List<String> capturedTagNames() {
-    ArgumentCaptor<Iterable<Tag>> captor = ArgumentCaptor.forClass(Iterable.class);
-    verify(tagRepository).saveAll(captor.capture());
-    List<String> names = new java.util.ArrayList<>();
-    captor.getValue().forEach(tag -> names.add(tag.getName()));
-    return names;
+    ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+    verify(tagRepository, atLeast(0)).insertIfAbsent(eq(USER_ID), captor.capture());
+    return captor.getAllValues();
+  }
+
+  /**
+   * Captura los identificadores de tag con los que se enlazó la transacción.
+   *
+   * @return los identificadores enlazados, en el orden en que se guardaron
+   */
+  private List<Long> capturedLinkedTagIds() {
+    ArgumentCaptor<Iterable<TransactionTag>> captor = ArgumentCaptor.forClass(Iterable.class);
+    verify(transactionTagRepository).saveAll(captor.capture());
+    List<Long> tagIds = new java.util.ArrayList<>();
+    captor.getValue().forEach(link -> tagIds.add(link.getTagId()));
+    return tagIds;
   }
 
   /**
@@ -199,7 +244,7 @@ class TransactionCommandServiceImplTest {
         .expectNextCount(1)
         .verifyComplete();
 
-    verify(tagRepository).deleteByTransactionId(10L);
+    verify(transactionTagRepository).deleteByTransactionId(10L);
     assertEquals(List.of("digital"), capturedTagNames());
   }
 
@@ -216,7 +261,7 @@ class TransactionCommandServiceImplTest {
         .assertNext(updated -> assertEquals("Descripción editada", updated.getDescription()))
         .verifyComplete();
 
-    verify(tagRepository, never()).deleteByTransactionId(anyLong());
+    verify(transactionTagRepository, never()).deleteByTransactionId(anyLong());
   }
 
   @Test
@@ -232,7 +277,7 @@ class TransactionCommandServiceImplTest {
         .expectNextCount(1)
         .verifyComplete();
 
-    verify(tagRepository).deleteByTransactionId(10L);
+    verify(transactionTagRepository).deleteByTransactionId(10L);
     assertEquals(List.of(), capturedTagNames());
   }
 
@@ -323,6 +368,50 @@ class TransactionCommandServiceImplTest {
         .verify();
 
     verify(transactionRepository, never()).delete(any(Transaction.class));
+  }
+
+  @Test
+  @DisplayName("Reutiliza el tag que el usuario ya tiene aunque lo escriba con otra grafia")
+  void reusesExistingTagWrittenWithAnotherCase() {
+    givenValidReferences();
+    doReturn(Mono.just(0L)).when(tagRepository).insertIfAbsent(USER_ID, "casa");
+    doReturn(Flux.just(new Tag(55L, USER_ID, "Casa")))
+        .when(tagRepository).findByUserIdAndLowerNameIn(eq(USER_ID), any());
+
+    StepVerifier.create(transactionCommandService.createTransaction(USER_ID,
+        createRequest(List.of("casa"))))
+        .expectNextCount(1)
+        .verifyComplete();
+
+    assertEquals(List.of(55L), capturedLinkedTagIds());
+    verify(tagRepository, never()).save(any(Tag.class));
+  }
+
+  @Test
+  @DisplayName("Enlaza la transaccion con los tags que resolvio el catalogo")
+  void linksTransactionToResolvedTags() {
+    givenValidReferences();
+
+    StepVerifier.create(transactionCommandService.createTransaction(USER_ID,
+        createRequest(List.of("ocio", "personal"))))
+        .expectNextCount(1)
+        .verifyComplete();
+
+    assertEquals(2, capturedLinkedTagIds().size());
+  }
+
+  @Test
+  @DisplayName("No da de alta ningun tag cuando la lista queda vacia tras normalizar")
+  void doesNotTouchCatalogWhenNoTagsRemain() {
+    givenValidReferences();
+
+    StepVerifier.create(transactionCommandService.createTransaction(USER_ID,
+        createRequest(List.of("   ", ""))))
+        .expectNextCount(1)
+        .verifyComplete();
+
+    verify(tagRepository, never()).insertIfAbsent(anyLong(), anyString());
+    verify(transactionTagRepository, never()).saveAll(any(Iterable.class));
   }
 
   /**

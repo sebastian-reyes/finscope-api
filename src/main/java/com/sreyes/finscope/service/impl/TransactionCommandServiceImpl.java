@@ -6,8 +6,10 @@ import com.sreyes.finscope.exception.custom.TransactionNotFoundException;
 import com.sreyes.finscope.exception.custom.TransactionTypeNotFoundException;
 import com.sreyes.finscope.model.entity.Tag;
 import com.sreyes.finscope.model.entity.Transaction;
+import com.sreyes.finscope.model.entity.TransactionTag;
 import com.sreyes.finscope.repository.TagRepository;
 import com.sreyes.finscope.repository.TransactionRepository;
+import com.sreyes.finscope.repository.TransactionTagRepository;
 import com.sreyes.finscope.repository.TransactionTypeRepository;
 import com.sreyes.finscope.service.TransactionCommandService;
 import com.sreyes.finscope.util.constants.Constants;
@@ -19,14 +21,16 @@ import java.util.Locale;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
  * Implementación del servicio {@link TransactionCommandService} para la gestión de comandos
  * de transacciones.
  * Proporciona operaciones reactivas para crear, actualizar y eliminar transacciones.
- * La única referencia que hay que validar es el tipo de transacción, porque los tags son
- * texto libre y nacen con la propia transacción.
+ * La única referencia que hay que validar es el tipo de transacción: los tags son texto
+ * libre y, si el usuario escribe uno que todavía no tiene, se da de alta en su catálogo
+ * sobre la marcha.
  */
 @Service
 @RequiredArgsConstructor
@@ -35,6 +39,7 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
   private final TransactionRepository transactionRepository;
   private final TransactionTypeRepository transactionTypeRepository;
   private final TagRepository tagRepository;
+  private final TransactionTagRepository transactionTagRepository;
   private final Clock clock;
 
   @Override
@@ -42,7 +47,7 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
     List<String> tags = normalizeTags(request.getTags());
     return requireTransactionType(request.getTransactionTypeId())
         .then(Mono.defer(() -> transactionRepository.save(toEntity(userId, request))))
-        .flatMap(saved -> replaceTags(saved.getId(), tags).thenReturn(saved));
+        .flatMap(saved -> replaceTags(userId, saved.getId(), tags).thenReturn(saved));
   }
 
   @Override
@@ -57,7 +62,7 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
         .flatMap(transactionRepository::save)
         .flatMap(saved -> request.getTags() == null
             ? Mono.just(saved)
-            : replaceTags(saved.getId(), tags).thenReturn(saved));
+            : replaceTags(userId, saved.getId(), tags).thenReturn(saved));
   }
 
   @Override
@@ -128,17 +133,47 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
 
   /**
    * Reemplaza por completo los tags de una transacción.
+   * Se rehacen los enlaces, no los tags: los que el usuario deja de usar siguen en su
+   * catálogo, de modo que conservan su identificador y su grafía si vuelve a escribirlos.
    *
+   * @param userId        identificador del usuario propietario
    * @param transactionId identificador de la transacción
    * @param names         nombres de tag ya normalizados
    * @return Mono vacío al completar el reemplazo
    */
-  private Mono<Void> replaceTags(Long transactionId, List<String> names) {
-    return tagRepository.deleteByTransactionId(transactionId)
-        .thenMany(tagRepository.saveAll(names.stream()
-            .map(name -> new Tag(null, transactionId, name))
-            .toList()))
-        .then();
+  private Mono<Void> replaceTags(Long userId, Long transactionId, List<String> names) {
+    return transactionTagRepository.deleteByTransactionId(transactionId)
+        .then(Mono.defer(() -> names.isEmpty()
+            ? Mono.empty()
+            : resolveTagIds(userId, names)
+                .flatMapMany(tagIds -> transactionTagRepository.saveAll(tagIds.stream()
+                    .map(tagId -> new TransactionTag(null, transactionId, tagId))
+                    .toList()))
+                .then()));
+  }
+
+  /**
+   * Resuelve el identificador de cada nombre de tag, dando de alta en el catálogo del
+   * usuario los que todavía no existan.
+   * El alta se intenta para todos y la base de datos descarta los que ya estaban, así que
+   * después basta con leer el catálogo una vez para tener los identificadores de los tags
+   * nuevos y de los reutilizados.
+   * Cuando el usuario escribe un tag que ya tiene con otra grafía, se reutiliza el
+   * existente: `casa` sobre un `Casa` previo no crea un tag nuevo ni renombra el anterior.
+   *
+   * @param userId identificador del usuario propietario
+   * @param names  nombres de tag ya normalizados
+   * @return identificadores de los tags correspondientes
+   */
+  private Mono<List<Long>> resolveTagIds(Long userId, List<String> names) {
+    List<String> lowerNames = names.stream()
+        .map(name -> name.toLowerCase(Locale.ROOT))
+        .toList();
+    return Flux.fromIterable(names)
+        .concatMap(name -> tagRepository.insertIfAbsent(userId, name))
+        .then(tagRepository.findByUserIdAndLowerNameIn(userId, lowerNames)
+            .map(Tag::getId)
+            .collectList());
   }
 
   /**

@@ -12,11 +12,11 @@ import com.sreyes.finscope.api.model.TransactionResponse;
 import com.sreyes.finscope.exception.custom.DateNotFoundException;
 import com.sreyes.finscope.exception.custom.InvalidSortException;
 import com.sreyes.finscope.exception.custom.TransactionNotFoundException;
-import com.sreyes.finscope.model.entity.Tag;
 import com.sreyes.finscope.model.entity.Transaction;
 import com.sreyes.finscope.model.entity.TransactionType;
 import com.sreyes.finscope.model.query.TransactionFilter;
 import com.sreyes.finscope.model.query.TransactionSearchCriteria;
+import com.sreyes.finscope.model.query.TransactionTagName;
 import com.sreyes.finscope.repository.TagRepository;
 import com.sreyes.finscope.repository.TransactionRepository;
 import com.sreyes.finscope.repository.TransactionSearchRepository;
@@ -80,7 +80,7 @@ class TransactionQueryServiceImplTest {
     when(transactionSearchRepository.count(any())).thenReturn(Mono.just(totalElements));
     when(transactionTypeRepository.findAllById(any(Iterable.class)))
         .thenReturn(Flux.just(new TransactionType(3L, "Egreso", "EXPENSE")));
-    when(tagRepository.findByTransactionIdIn(any())).thenReturn(Flux.empty());
+    when(tagRepository.findNamesByTransactionIdIn(any())).thenReturn(Flux.empty());
     when(transactionMapper.toResponse(any(), any(), any()))
         .thenReturn(new TransactionResponse());
   }
@@ -255,8 +255,9 @@ class TransactionQueryServiceImplTest {
   @DisplayName("Entrega los tags de la transacción ordenados alfabéticamente")
   void sortsTagsAlphabetically() {
     givenSearchReturnsOneTransaction(1L);
-    when(tagRepository.findByTransactionIdIn(any()))
-        .thenReturn(Flux.just(new Tag(1L, 1L, "personal"), new Tag(2L, 1L, "Ocio")));
+    when(tagRepository.findNamesByTransactionIdIn(any()))
+        .thenReturn(Flux.just(new TransactionTagName(1L, "personal"),
+            new TransactionTagName(1L, "Ocio")));
 
     StepVerifier.create(transactionQueryService.searchTransactions(USER_ID, criteria(0, 20, null)))
         .expectNextCount(1)

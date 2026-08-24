@@ -8,12 +8,16 @@ import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
 
 /**
- * Entidad que representa un tag de una transacción.
+ * Entidad que representa un tag del usuario.
  * Está mapeada a la tabla `tags` en la base de datos.
- * Un tag es texto libre y pertenece a una única transacción, de modo que clasificar no
- * obliga a mantener un catálogo previo. El mismo nombre puede repetirse entre
- * transacciones distintas, pero no dentro de una misma.
- * Los tags no intervienen en el cálculo monetario y desaparecen con su transacción.
+ * El tag es texto libre y pertenece al usuario, no a una transacción concreta: se crea al
+ * vuelo al escribirlo dentro de una transacción, de modo que clasificar sigue sin obligar
+ * a mantener un catálogo previo. La relación con las transacciones vive en
+ * {@link TransactionTag}, porque un tag puede usarse en muchas y una transacción puede
+ * llevar muchos.
+ * Un mismo nombre no puede repetirse para un usuario sin distinguir mayúsculas, lo que
+ * impide que `Casa` y `casa` acaben siendo dos tags distintos en el autocompletado.
+ * Los tags no intervienen en el cálculo monetario.
  */
 @Data
 @AllArgsConstructor
@@ -26,10 +30,10 @@ public class Tag {
   private Long id;
 
   /**
-   * Identificador de la transacción a la que pertenece el tag.
+   * Identificador del usuario propietario del tag.
    */
-  @Column("transaction_id")
-  private Long transactionId;
+  @Column("user_id")
+  private Long userId;
 
   @Column("name_tag")
   private String name;
