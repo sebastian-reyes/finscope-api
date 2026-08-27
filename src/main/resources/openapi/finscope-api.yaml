@@ -20,7 +20,7 @@ info:
     Todos los recursos financieros pertenecen al usuario autenticado y estan aislados
     entre usuarios. Salvo los endpoints de autenticacion, todas las operaciones exigen
     un token de acceso.
-  version: 6.0.0
+  version: 6.1.0
 servers:
   - url: /
     description: Servidor local
@@ -150,6 +150,34 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UserResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    patch:
+      tags: [auth]
+      summary: Actualiza los datos del usuario autenticado
+      description: |
+        Cambia el nombre con el que el usuario se presenta. El correo no se toca aqui: es
+        la credencial con la que se entra, y cambiarlo obligaria a rehacer la identidad
+        local y a reemitir las credenciales, que es otra operacion.
+        Como en el resto de la API, un campo ausente se deja como esta; el nombre en blanco
+        si es un cambio, y lo deja sin poner, que es el estado con el que puede nacer una
+        cuenta.
+      operationId: updateCurrentUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserRequest"
+      responses:
+        "200":
+          description: Usuario actualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
 
@@ -732,6 +760,16 @@ components:
           description: Segundos de validez restantes del token de acceso
         user:
           $ref: "#/components/schemas/UserResponse"
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        displayName:
+          type: string
+          maxLength: 70
+          description: |
+            Nombre con el que el usuario se presenta en la aplicacion. En blanco lo deja
+            sin poner.
 
     UserResponse:
       type: object

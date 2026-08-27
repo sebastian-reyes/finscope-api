@@ -3,6 +3,7 @@ package com.sreyes.finscope.service.impl;
 import com.sreyes.finscope.api.model.AuthResponse;
 import com.sreyes.finscope.api.model.LoginRequest;
 import com.sreyes.finscope.api.model.RegisterRequest;
+import com.sreyes.finscope.api.model.UpdateUserRequest;
 import com.sreyes.finscope.api.model.UserResponse;
 import com.sreyes.finscope.exception.custom.EmailAlreadyRegisteredException;
 import com.sreyes.finscope.exception.custom.InvalidCredentialsException;
@@ -103,6 +104,22 @@ public class AuthServiceImpl implements AuthService {
         .map(this::toUserResponse);
   }
 
+  @Override
+  public Mono<UserResponse> updateUser(Long userId, UpdateUserRequest request) {
+    return userRepository.findById(userId)
+        .switchIfEmpty(Mono.error(
+            new InvalidCredentialsException(Constants.INVALID_CREDENTIALS)))
+        .flatMap(user -> {
+          // Un campo ausente no es un cambio: se queda lo que hubiera. El nombre en blanco
+          // si lo es, y deja la cuenta sin nombre, que es como puede nacer.
+          if (request.getDisplayName() != null) {
+            user.setDisplayName(normaliseDisplayName(request.getDisplayName()));
+          }
+          return userRepository.save(user);
+        })
+        .map(this::toUserResponse);
+  }
+
   /**
    * Da de alta un usuario nuevo junto con su identidad local.
    *
@@ -114,7 +131,7 @@ public class AuthServiceImpl implements AuthService {
     User user = new User();
     user.setEmail(email);
     user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
-    user.setDisplayName(request.getDisplayName());
+    user.setDisplayName(normaliseDisplayName(request.getDisplayName()));
     user.setActive(true);
     user.setCreatedAt(LocalDateTime.now(clock));
     return userRepository.save(user)
@@ -228,10 +245,26 @@ public class AuthServiceImpl implements AuthService {
   }
 
   /**
-   * Convierte el usuario en su representación pública.
+   * Deja el nombre como se va a guardar: sin espacios de sobra y nulo si no queda nada.
+   * Un nombre en blanco y la ausencia de nombre son el mismo estado, y guardarlos de dos
+   * formas distintas obligaria a comprobar las dos en cada sitio que lo pinta.
    *
-   * @param user usuario autenticado
-   * @return la representación del usuario
+   * @param displayName nombre tal y como ha llegado
+   * @return el nombre listo para guardar, o nulo si venia vacio
+   */
+  private String normaliseDisplayName(String displayName) {
+    if (displayName == null) {
+      return null;
+    }
+    String trimmed = displayName.trim();
+    return trimmed.isEmpty() ? null : trimmed;
+  }
+
+  /**
+   * Construye la representacion publica de un usuario.
+   *
+   * @param user usuario a representar
+   * @return la representacion del usuario
    */
   private UserResponse toUserResponse(User user) {
     UserResponse response = new UserResponse(user.getId(), user.getEmail());

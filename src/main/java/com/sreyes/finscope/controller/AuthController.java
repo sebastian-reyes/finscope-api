@@ -5,6 +5,7 @@ import com.sreyes.finscope.api.model.AuthResponse;
 import com.sreyes.finscope.api.model.LoginRequest;
 import com.sreyes.finscope.api.model.RefreshTokenRequest;
 import com.sreyes.finscope.api.model.RegisterRequest;
+import com.sreyes.finscope.api.model.UpdateUserRequest;
 import com.sreyes.finscope.api.model.UserResponse;
 import com.sreyes.finscope.security.AuthenticatedUser;
 import com.sreyes.finscope.service.AuthService;
@@ -64,6 +65,15 @@ public class AuthController implements AuthApi {
   public Mono<ResponseEntity<UserResponse>> getCurrentUser(ServerWebExchange exchange) {
     return authenticatedUser.currentUserId()
         .flatMap(authService::getUser)
+        .map(ResponseEntity::ok);
+  }
+
+  @Override
+  public Mono<ResponseEntity<UserResponse>> updateCurrentUser(
+      Mono<UpdateUserRequest> updateUserRequest, ServerWebExchange exchange) {
+    return authenticatedUser.currentUserId()
+        .flatMap(userId -> updateUserRequest
+            .flatMap(request -> authService.updateUser(userId, request)))
         .map(ResponseEntity::ok);
   }
 }

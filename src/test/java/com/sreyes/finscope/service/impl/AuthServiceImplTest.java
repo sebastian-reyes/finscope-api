@@ -3,6 +3,7 @@ package com.sreyes.finscope.service.impl;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -13,6 +14,7 @@ import static org.mockito.Mockito.when;
 
 import com.sreyes.finscope.api.model.LoginRequest;
 import com.sreyes.finscope.api.model.RegisterRequest;
+import com.sreyes.finscope.api.model.UpdateUserRequest;
 import com.sreyes.finscope.exception.custom.EmailAlreadyRegisteredException;
 import com.sreyes.finscope.exception.custom.InvalidCredentialsException;
 import com.sreyes.finscope.exception.custom.InvalidRefreshTokenException;
@@ -264,6 +266,77 @@ class AuthServiceImplTest {
           assertNotEquals(auth.getRefreshToken(), captor.getValue().getTokenHash());
         })
         .verifyComplete();
+  }
+
+  @Test
+  @DisplayName("Cambia el nombre con el que el usuario se presenta")
+  void updatesDisplayName() {
+    User user = existingUser(passwordEncoder.encode(PASSWORD));
+    when(userRepository.findById(USER_ID)).thenReturn(Mono.just(user));
+    when(userRepository.save(any(User.class)))
+        .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+
+    StepVerifier.create(authService.updateUser(USER_ID, updateRequest("  Sebastián R.  ")))
+        // De paso se comprueba que el nombre se guarda sin los espacios de los extremos.
+        .assertNext(updated -> assertEquals("Sebastián R.", updated.getDisplayName()))
+        .verifyComplete();
+
+    assertEquals("Sebastián R.", user.getDisplayName());
+  }
+
+  @Test
+  @DisplayName("Deja la cuenta sin nombre cuando se envía en blanco")
+  void clearsDisplayNameWhenBlank() {
+    User user = existingUser(passwordEncoder.encode(PASSWORD));
+    when(userRepository.findById(USER_ID)).thenReturn(Mono.just(user));
+    when(userRepository.save(any(User.class)))
+        .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+
+    StepVerifier.create(authService.updateUser(USER_ID, updateRequest("   ")))
+        .assertNext(updated -> assertNull(updated.getDisplayName()))
+        .verifyComplete();
+
+    assertNull(user.getDisplayName());
+  }
+
+  @Test
+  @DisplayName("Un campo ausente no cambia nada, ni toca el correo")
+  void leavesAbsentFieldsAlone() {
+    User user = existingUser(passwordEncoder.encode(PASSWORD));
+    when(userRepository.findById(USER_ID)).thenReturn(Mono.just(user));
+    when(userRepository.save(any(User.class)))
+        .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+
+    StepVerifier.create(authService.updateUser(USER_ID, new UpdateUserRequest()))
+        .assertNext(updated -> {
+          assertEquals("Sebastian", updated.getDisplayName());
+          assertEquals(EMAIL, updated.getEmail());
+        })
+        .verifyComplete();
+  }
+
+  @Test
+  @DisplayName("No deja cambiar los datos de un usuario que no existe")
+  void rejectsUpdateOnUnknownUser() {
+    when(userRepository.findById(anyLong())).thenReturn(Mono.empty());
+
+    StepVerifier.create(authService.updateUser(USER_ID, updateRequest("Quien sea")))
+        .expectError(InvalidCredentialsException.class)
+        .verify();
+
+    verify(userRepository, never()).save(any(User.class));
+  }
+
+  /**
+   * Construye una petición de cambio con el nombre indicado.
+   *
+   * @param displayName nombre a guardar
+   * @return la petición de cambio
+   */
+  private UpdateUserRequest updateRequest(String displayName) {
+    UpdateUserRequest request = new UpdateUserRequest();
+    request.setDisplayName(displayName);
+    return request;
   }
 
   /**

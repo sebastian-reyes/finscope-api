@@ -3,6 +3,7 @@ package com.sreyes.finscope.service;
 import com.sreyes.finscope.api.model.AuthResponse;
 import com.sreyes.finscope.api.model.LoginRequest;
 import com.sreyes.finscope.api.model.RegisterRequest;
+import com.sreyes.finscope.api.model.UpdateUserRequest;
 import com.sreyes.finscope.api.model.UserResponse;
 import reactor.core.publisher.Mono;
 
@@ -52,4 +53,14 @@ public interface AuthService {
    * @return datos del usuario envueltos en Mono
    */
   Mono<UserResponse> getUser(Long userId);
+
+  /**
+   * Cambia los datos con los que el usuario se presenta.
+   * El correo queda fuera: es la credencial con la que se entra.
+   *
+   * @param userId  identificador del usuario
+   * @param request datos a cambiar; los ausentes se dejan como estan
+   * @return los datos del usuario ya actualizados envueltos en Mono
+   */
+  Mono<UserResponse> updateUser(Long userId, UpdateUserRequest request);
 }
