@@ -11,6 +11,8 @@ import static org.springframework.security.test.web.reactive.server.SecurityMock
 
 import com.sreyes.finscope.api.model.TransactionPageResponse;
 import com.sreyes.finscope.api.model.TransactionResponse;
+import com.sreyes.finscope.api.model.CategoryResponse;
+import com.sreyes.finscope.api.model.CategoryScope;
 import com.sreyes.finscope.api.model.TransactionTypeResponse;
 import com.sreyes.finscope.config.TimeConfig;
 import com.sreyes.finscope.exception.custom.DateNotFoundException;
@@ -78,6 +80,8 @@ class TransactionControllerTest {
     response.setDate(LocalDateTime.of(2026, 8, 17, 20, 0));
     response.setTransactionType(new TransactionTypeResponse(2L, "Egreso",
         TransactionTypeResponse.CodeEnum.EXPENSE));
+    response.setCategory(new CategoryResponse(4L, "Entretenimiento", CategoryScope.EXPENSE,
+        false, 0L));
     response.setTags(List.of("ocio", "personal"));
     return response;
   }
@@ -89,7 +93,7 @@ class TransactionControllerTest {
    */
   private Transaction savedTransaction() {
     return new Transaction(1L, new BigDecimal("300.00"), "Videojuego",
-        LocalDateTime.of(2026, 8, 17, 20, 0), USER_ID, 2L);
+        LocalDateTime.of(2026, 8, 17, 20, 0), USER_ID, 2L, 4L);
   }
 
   @Test
@@ -215,7 +219,7 @@ class TransactionControllerTest {
         .thenReturn(Mono.just(transactionResponse()));
 
     webTestClient.post().uri("/transactions")
-        .bodyValue(Map.of("amount", 300.00, "transactionTypeId", 2,
+        .bodyValue(Map.of("amount", 300.00, "transactionTypeId", 2, "categoryId", 4,
             "tags", List.of("ocio", "personal")))
         .exchange()
         .expectStatus().isCreated()
@@ -227,7 +231,7 @@ class TransactionControllerTest {
   @DisplayName("Rechaza con 400 una transacción con importe no positivo")
   void rejectsNonPositiveAmount() {
     webTestClient.post().uri("/transactions")
-        .bodyValue(Map.of("amount", 0, "transactionTypeId", 2))
+        .bodyValue(Map.of("amount", 0, "transactionTypeId", 2, "categoryId", 4))
         .exchange()
         .expectStatus().isBadRequest()
         .expectBody()
@@ -251,7 +255,7 @@ class TransactionControllerTest {
             new TransactionTypeNotFoundException("Transaction type not found with id: 99")));
 
     webTestClient.post().uri("/transactions")
-        .bodyValue(Map.of("amount", 10, "transactionTypeId", 99))
+        .bodyValue(Map.of("amount", 10, "transactionTypeId", 99, "categoryId", 4))
         .exchange()
         .expectStatus().isNotFound()
         .expectBody()

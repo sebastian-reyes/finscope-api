@@ -12,11 +12,13 @@ import com.sreyes.finscope.api.model.TransactionResponse;
 import com.sreyes.finscope.exception.custom.DateNotFoundException;
 import com.sreyes.finscope.exception.custom.InvalidSortException;
 import com.sreyes.finscope.exception.custom.TransactionNotFoundException;
+import com.sreyes.finscope.model.entity.Category;
 import com.sreyes.finscope.model.entity.Transaction;
 import com.sreyes.finscope.model.entity.TransactionType;
 import com.sreyes.finscope.model.query.TransactionFilter;
 import com.sreyes.finscope.model.query.TransactionSearchCriteria;
 import com.sreyes.finscope.model.query.TransactionTagName;
+import com.sreyes.finscope.repository.CategoryRepository;
 import com.sreyes.finscope.repository.TagRepository;
 import com.sreyes.finscope.repository.TransactionRepository;
 import com.sreyes.finscope.repository.TransactionSearchRepository;
@@ -60,6 +62,9 @@ class TransactionQueryServiceImplTest {
   private TransactionTypeRepository transactionTypeRepository;
 
   @Mock
+  private CategoryRepository categoryRepository;
+
+  @Mock
   private TagRepository tagRepository;
 
   @Mock
@@ -75,13 +80,15 @@ class TransactionQueryServiceImplTest {
    */
   private void givenSearchReturnsOneTransaction(long totalElements) {
     Transaction transaction = new Transaction(1L, new BigDecimal("300.00"), "Videojuego",
-        LocalDateTime.of(2026, 8, 17, 20, 0), USER_ID, 3L);
+        LocalDateTime.of(2026, 8, 17, 20, 0), USER_ID, 3L, 5L);
     when(transactionSearchRepository.search(any(), any())).thenReturn(Flux.just(transaction));
     when(transactionSearchRepository.count(any())).thenReturn(Mono.just(totalElements));
     when(transactionTypeRepository.findAllById(any(Iterable.class)))
         .thenReturn(Flux.just(new TransactionType(3L, "Egreso", "EXPENSE")));
+    when(categoryRepository.findAllById(any(Iterable.class)))
+        .thenReturn(Flux.just(new Category(5L, USER_ID, "Entretenimiento", "EXPENSE", false)));
     when(tagRepository.findNamesByTransactionIdIn(any())).thenReturn(Flux.empty());
-    when(transactionMapper.toResponse(any(), any(), any()))
+    when(transactionMapper.toResponse(any(), any(), any(), any()))
         .thenReturn(new TransactionResponse());
   }
 
@@ -94,7 +101,8 @@ class TransactionQueryServiceImplTest {
    * @return los criterios de búsqueda
    */
   private TransactionSearchCriteria criteria(int page, int size, String sort) {
-    return new TransactionSearchCriteria(null, null, null, null, null, null, page, size, sort);
+    return new TransactionSearchCriteria(null, null, null, null, null, null, null, page, size,
+        sort);
   }
 
   @Test
@@ -167,7 +175,7 @@ class TransactionQueryServiceImplTest {
   void translatesMonthFilterIntoDateRange() {
     givenSearchReturnsOneTransaction(1L);
     TransactionSearchCriteria criteria = new TransactionSearchCriteria(8, 2026, null, null,
-        null, null, 0, 20, null);
+        null, null, null, 0, 20, null);
 
     StepVerifier.create(transactionQueryService.searchTransactions(USER_ID, criteria))
         .expectNextCount(1)
@@ -184,7 +192,7 @@ class TransactionQueryServiceImplTest {
   @DisplayName("Rechaza combinar el filtro de mes con un rango explícito de fechas")
   void rejectsConflictingDateFilters() {
     TransactionSearchCriteria criteria = new TransactionSearchCriteria(8, 2026,
-        LocalDateTime.of(2026, 1, 1, 0, 0), null, null, null, 0, 20, null);
+        LocalDateTime.of(2026, 1, 1, 0, 0), null, null, null, null, 0, 20, null);
 
     StepVerifier.create(transactionQueryService.searchTransactions(USER_ID, criteria))
         .expectError(DateNotFoundException.class)
@@ -195,7 +203,7 @@ class TransactionQueryServiceImplTest {
   @DisplayName("Exige informar mes y año conjuntamente")
   void rejectsIncompleteMonthFilter() {
     TransactionSearchCriteria criteria = new TransactionSearchCriteria(8, null, null, null,
-        null, null, 0, 20, null);
+        null, null, null, 0, 20, null);
 
     StepVerifier.create(transactionQueryService.searchTransactions(USER_ID, criteria))
         .expectError(DateNotFoundException.class)
@@ -207,7 +215,7 @@ class TransactionQueryServiceImplTest {
   void rejectsInvertedDateRange() {
     TransactionSearchCriteria criteria = new TransactionSearchCriteria(null, null,
         LocalDateTime.of(2026, 8, 31, 0, 0), LocalDateTime.of(2026, 8, 1, 0, 0),
-        null, null, 0, 20, null);
+        null, null, null, 0, 20, null);
 
     StepVerifier.create(transactionQueryService.searchTransactions(USER_ID, criteria))
         .expectError(DateNotFoundException.class)
@@ -221,7 +229,7 @@ class TransactionQueryServiceImplTest {
     when(tagRepository.findTransactionIdsByUserIdAndName(USER_ID, "ocio"))
         .thenReturn(Flux.just(1L, 2L));
     TransactionSearchCriteria criteria = new TransactionSearchCriteria(null, null, null, null,
-        null, "ocio", 0, 20, null);
+        null, null, "ocio", 0, 20, null);
 
     StepVerifier.create(transactionQueryService.searchTransactions(USER_ID, criteria))
         .expectNextCount(1)
@@ -238,7 +246,7 @@ class TransactionQueryServiceImplTest {
     when(tagRepository.findTransactionIdsByUserIdAndName(USER_ID, "inexistente"))
         .thenReturn(Flux.empty());
     TransactionSearchCriteria criteria = new TransactionSearchCriteria(null, null, null, null,
-        null, "inexistente", 0, 20, null);
+        null, null, "inexistente", 0, 20, null);
 
     StepVerifier.create(transactionQueryService.searchTransactions(USER_ID, criteria))
         .assertNext(page -> {
@@ -264,7 +272,7 @@ class TransactionQueryServiceImplTest {
         .verifyComplete();
 
     ArgumentCaptor<List<String>> captor = ArgumentCaptor.forClass(List.class);
-    verify(transactionMapper).toResponse(any(), any(), captor.capture());
+    verify(transactionMapper).toResponse(any(), any(), any(), captor.capture());
     assertEquals(List.of("Ocio", "personal"), captor.getValue());
   }
 
@@ -278,8 +286,38 @@ class TransactionQueryServiceImplTest {
         .verifyComplete();
 
     ArgumentCaptor<List<String>> captor = ArgumentCaptor.forClass(List.class);
-    verify(transactionMapper).toResponse(any(), any(), captor.capture());
+    verify(transactionMapper).toResponse(any(), any(), any(), captor.capture());
     assertEquals(List.of(), captor.getValue());
+  }
+
+  @Test
+  @DisplayName("Resuelve la categoría antes de ensamblar la respuesta")
+  void resolvesCategory() {
+    givenSearchReturnsOneTransaction(1L);
+
+    StepVerifier.create(transactionQueryService.searchTransactions(USER_ID, criteria(0, 20, null)))
+        .expectNextCount(1)
+        .verifyComplete();
+
+    ArgumentCaptor<Category> captor = ArgumentCaptor.forClass(Category.class);
+    verify(transactionMapper).toResponse(any(), any(), captor.capture(), any());
+    assertEquals("Entretenimiento", captor.getValue().getName());
+  }
+
+  @Test
+  @DisplayName("Traslada el filtro de categoría a los criterios del repositorio")
+  void appliesCategoryFilter() {
+    givenSearchReturnsOneTransaction(1L);
+    TransactionSearchCriteria criteria = new TransactionSearchCriteria(null, null, null, null,
+        null, 5L, null, 0, 20, null);
+
+    StepVerifier.create(transactionQueryService.searchTransactions(USER_ID, criteria))
+        .expectNextCount(1)
+        .verifyComplete();
+
+    ArgumentCaptor<TransactionFilter> captor = ArgumentCaptor.forClass(TransactionFilter.class);
+    verify(transactionSearchRepository).search(captor.capture(), any());
+    assertEquals(5L, captor.getValue().categoryId());
   }
 
   @Test
@@ -292,7 +330,7 @@ class TransactionQueryServiceImplTest {
         .verifyComplete();
 
     ArgumentCaptor<TransactionType> captor = ArgumentCaptor.forClass(TransactionType.class);
-    verify(transactionMapper).toResponse(any(), captor.capture(), any());
+    verify(transactionMapper).toResponse(any(), captor.capture(), any(), any());
     assertEquals("EXPENSE", captor.getValue().getCode());
   }
 
@@ -326,7 +364,7 @@ class TransactionQueryServiceImplTest {
     givenSearchReturnsOneTransaction(1L);
     when(tagRepository.findTransactionIdsByUserIdAndName(eq(8L), any())).thenReturn(Flux.empty());
     TransactionSearchCriteria criteria = new TransactionSearchCriteria(null, null, null, null,
-        null, "ocio", 0, 20, null);
+        null, null, "ocio", 0, 20, null);
 
     StepVerifier.create(transactionQueryService.searchTransactions(8L, criteria))
         .expectNextCount(1)

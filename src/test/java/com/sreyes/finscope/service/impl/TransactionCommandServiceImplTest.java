@@ -14,12 +14,16 @@ import static org.mockito.Mockito.when;
 
 import com.sreyes.finscope.api.model.CreateTransactionRequest;
 import com.sreyes.finscope.api.model.UpdateTransactionRequest;
+import com.sreyes.finscope.exception.custom.CategoryNotApplicableException;
+import com.sreyes.finscope.exception.custom.CategoryNotFoundException;
 import com.sreyes.finscope.exception.custom.TransactionNotFoundException;
 import com.sreyes.finscope.exception.custom.TransactionTypeNotFoundException;
+import com.sreyes.finscope.model.entity.Category;
 import com.sreyes.finscope.model.entity.Tag;
 import com.sreyes.finscope.model.entity.Transaction;
 import com.sreyes.finscope.model.entity.TransactionTag;
 import com.sreyes.finscope.model.entity.TransactionType;
+import com.sreyes.finscope.repository.CategoryRepository;
 import com.sreyes.finscope.repository.TagRepository;
 import com.sreyes.finscope.repository.TransactionRepository;
 import com.sreyes.finscope.repository.TransactionTagRepository;
@@ -62,6 +66,9 @@ class TransactionCommandServiceImplTest {
   private TransactionTypeRepository transactionTypeRepository;
 
   @Mock
+  private CategoryRepository categoryRepository;
+
+  @Mock
   private TagRepository tagRepository;
 
   @Mock
@@ -75,11 +82,13 @@ class TransactionCommandServiceImplTest {
   private TransactionCommandServiceImpl transactionCommandService;
 
   /**
-   * Configura el tipo de transacción como existente y la persistencia como satisfactoria.
+   * Configura el tipo y la categoría como existentes y la persistencia como satisfactoria.
    */
   private void givenValidReferences() {
     when(transactionTypeRepository.findById(2L))
         .thenReturn(Mono.just(new TransactionType(2L, "Egreso", "EXPENSE")));
+    when(categoryRepository.findByIdAndUserId(3L, USER_ID))
+        .thenReturn(Mono.just(new Category(3L, USER_ID, "Entretenimiento", "EXPENSE", false)));
     when(transactionRepository.save(any(Transaction.class)))
         .thenAnswer(invocation -> {
           Transaction transaction = invocation.getArgument(0);
@@ -149,6 +158,7 @@ class TransactionCommandServiceImplTest {
     request.setAmount(new BigDecimal("300.00"));
     request.setDescription("Videojuego");
     request.setTransactionTypeId(2L);
+    request.setCategoryId(3L);
     request.setTags(tags);
     return request;
   }
@@ -232,6 +242,90 @@ class TransactionCommandServiceImplTest {
   }
 
   @Test
+  @DisplayName("Guarda la transacción con la categoría elegida")
+  void createsTransactionWithCategory() {
+    givenValidReferences();
+
+    StepVerifier.create(transactionCommandService.createTransaction(USER_ID, createRequest(null)))
+        .assertNext(saved -> assertEquals(3L, saved.getCategoryId()))
+        .verifyComplete();
+  }
+
+  @Test
+  @DisplayName("Rechaza la creación cuando la categoría no existe o es de otro usuario")
+  void rejectsMissingCategory() {
+    givenValidReferences();
+    when(categoryRepository.findByIdAndUserId(3L, USER_ID)).thenReturn(Mono.empty());
+
+    StepVerifier.create(transactionCommandService.createTransaction(USER_ID, createRequest(null)))
+        .expectError(CategoryNotFoundException.class)
+        .verify();
+
+    verify(transactionRepository, never()).save(any(Transaction.class));
+  }
+
+  @Test
+  @DisplayName("Rechaza clasificar un egreso con una categoría de ingresos")
+  void rejectsCategoryThatDoesNotAdmitTheType() {
+    givenValidReferences();
+    when(categoryRepository.findByIdAndUserId(3L, USER_ID))
+        .thenReturn(Mono.just(new Category(3L, USER_ID, "Salario", "INCOME", false)));
+
+    StepVerifier.create(transactionCommandService.createTransaction(USER_ID, createRequest(null)))
+        .expectError(CategoryNotApplicableException.class)
+        .verify();
+
+    verify(transactionRepository, never()).save(any(Transaction.class));
+  }
+
+  @Test
+  @DisplayName("Admite una categoría de ámbito mixto en cualquier tipo")
+  void acceptsCategoryThatAppliesToBoth() {
+    givenValidReferences();
+    when(categoryRepository.findByIdAndUserId(3L, USER_ID))
+        .thenReturn(Mono.just(new Category(3L, USER_ID, "Otros", "BOTH", true)));
+
+    StepVerifier.create(transactionCommandService.createTransaction(USER_ID, createRequest(null)))
+        .expectNextCount(1)
+        .verifyComplete();
+  }
+
+  @Test
+  @DisplayName("Cambia la categoría de la transacción al actualizarla")
+  void updatesCategory() {
+    givenValidReferences();
+    when(transactionRepository.findByIdAndUserId(10L, USER_ID))
+        .thenReturn(Mono.just(existingTransaction()));
+    when(categoryRepository.findByIdAndUserId(9L, USER_ID))
+        .thenReturn(Mono.just(new Category(9L, USER_ID, "Comida", "EXPENSE", false)));
+    UpdateTransactionRequest request = new UpdateTransactionRequest();
+    request.setCategoryId(9L);
+
+    StepVerifier.create(transactionCommandService.updateTransaction(USER_ID, 10L, request))
+        .assertNext(updated -> assertEquals(9L, updated.getCategoryId()))
+        .verifyComplete();
+  }
+
+  @Test
+  @DisplayName("Revalida la pareja al cambiar solo el tipo de la transacción")
+  void revalidatesCategoryWhenOnlyTypeChanges() {
+    givenValidReferences();
+    when(transactionRepository.findByIdAndUserId(10L, USER_ID))
+        .thenReturn(Mono.just(existingTransaction()));
+    when(transactionTypeRepository.findById(1L))
+        .thenReturn(Mono.just(new TransactionType(1L, "Ingreso", "INCOME")));
+    UpdateTransactionRequest request = new UpdateTransactionRequest();
+    request.setTransactionTypeId(1L);
+
+    // La categoría guardada es de egresos y la transacción pasa a ser un ingreso.
+    StepVerifier.create(transactionCommandService.updateTransaction(USER_ID, 10L, request))
+        .expectError(CategoryNotApplicableException.class)
+        .verify();
+
+    verify(transactionRepository, never()).save(any(Transaction.class));
+  }
+
+  @Test
   @DisplayName("Reemplaza los tags cuando la actualización los informa")
   void replacesTagsWhenProvided() {
     givenValidReferences();
@@ -295,6 +389,7 @@ class TransactionCommandServiceImplTest {
           assertEquals(new BigDecimal("55.00"), updated.getAmount());
           assertEquals("Original", updated.getDescription());
           assertEquals(2L, updated.getTransactionTypeId());
+          assertEquals(3L, updated.getCategoryId());
         })
         .verifyComplete();
   }
@@ -421,6 +516,6 @@ class TransactionCommandServiceImplTest {
    */
   private Transaction existingTransaction() {
     return new Transaction(10L, new BigDecimal("300.00"), "Original",
-        LocalDateTime.of(2026, 4, 26, 13, 35), USER_ID, 2L);
+        LocalDateTime.of(2026, 4, 26, 13, 35), USER_ID, 2L, 3L);
   }
 }

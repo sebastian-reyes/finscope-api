@@ -9,8 +9,8 @@ import reactor.core.publisher.Mono;
  * Repositorio para la entidad {@link TransactionTag}.
  * Proporciona operaciones reactivas sobre la tabla `transaction_tags`, que enlaza cada
  * transacción con los tags que lleva.
- * Solo expone el borrado de los enlaces de una transacción; las altas se hacen con las
- * operaciones heredadas, porque asignar tags es siempre un reemplazo completo de la lista.
+ * Solo expone el borrado de enlaces; las altas se hacen con las operaciones heredadas,
+ * porque asignar tags es siempre un reemplazo completo de la lista.
  */
 @Repository
 public interface TransactionTagRepository extends R2dbcRepository<TransactionTag, Long> {
@@ -23,4 +23,14 @@ public interface TransactionTagRepository extends R2dbcRepository<TransactionTag
    * @return Mono vacío al completar la eliminación
    */
   Mono<Void> deleteByTransactionId(Long transactionId);
+
+  /**
+   * Elimina todos los enlaces de un tag, retirándolo de las transacciones que lo llevan.
+   * Es el paso previo a borrar el tag: las transacciones sobreviven, solo dejan de estar
+   * clasificadas por él.
+   *
+   * @param tagId identificador del tag
+   * @return Mono vacío al completar la eliminación
+   */
+  Mono<Void> deleteByTagId(Long tagId);
 }

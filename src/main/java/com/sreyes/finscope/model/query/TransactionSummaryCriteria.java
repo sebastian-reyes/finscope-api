@@ -3,10 +3,10 @@ package com.sreyes.finscope.model.query;
 import java.time.LocalDateTime;
 
 /**
- * Criterios de búsqueda de transacciones tal y como llegan desde la API, antes de ser
- * normalizados por la capa de servicio.
- * Agrupa los filtros, la paginación y el ordenamiento para no propagar una lista larga de
- * parámetros entre capas.
+ * Filtros de un resumen de transacciones tal y como llegan desde la API.
+ * Son los mismos que admite el listado salvo la paginación y el ordenamiento, que un
+ * agregado no necesita: el resumen recorre todas las transacciones que cumplen los filtros,
+ * no una página de ellas.
  *
  * @param month             mes de la transacción, entre 1 y 12
  * @param year              año de la transacción
@@ -15,19 +15,13 @@ import java.time.LocalDateTime;
  * @param transactionTypeId identificador del tipo de transacción
  * @param categoryId        identificador de la categoría principal
  * @param tag               nombre del tag asociado, sin distinguir mayúsculas
- * @param page              número de página, empezando en cero
- * @param size              cantidad de elementos por página
- * @param sort              criterio de ordenamiento con formato campo,direccion
  */
-public record TransactionSearchCriteria(
+public record TransactionSummaryCriteria(
     Integer month,
     Integer year,
     LocalDateTime dateFrom,
     LocalDateTime dateTo,
     Long transactionTypeId,
     Long categoryId,
-    String tag,
-    Integer page,
-    Integer size,
-    String sort) {
+    String tag) {
 }

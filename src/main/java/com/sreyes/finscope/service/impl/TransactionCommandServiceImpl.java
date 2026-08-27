@@ -1,12 +1,18 @@
 package com.sreyes.finscope.service.impl;
 
+import com.sreyes.finscope.api.model.CategoryScope;
 import com.sreyes.finscope.api.model.CreateTransactionRequest;
 import com.sreyes.finscope.api.model.UpdateTransactionRequest;
+import com.sreyes.finscope.exception.custom.CategoryNotApplicableException;
+import com.sreyes.finscope.exception.custom.CategoryNotFoundException;
 import com.sreyes.finscope.exception.custom.TransactionNotFoundException;
 import com.sreyes.finscope.exception.custom.TransactionTypeNotFoundException;
+import com.sreyes.finscope.model.entity.Category;
 import com.sreyes.finscope.model.entity.Tag;
 import com.sreyes.finscope.model.entity.Transaction;
 import com.sreyes.finscope.model.entity.TransactionTag;
+import com.sreyes.finscope.model.entity.TransactionType;
+import com.sreyes.finscope.repository.CategoryRepository;
 import com.sreyes.finscope.repository.TagRepository;
 import com.sreyes.finscope.repository.TransactionRepository;
 import com.sreyes.finscope.repository.TransactionTagRepository;
@@ -28,9 +34,10 @@ import reactor.core.publisher.Mono;
  * Implementación del servicio {@link TransactionCommandService} para la gestión de comandos
  * de transacciones.
  * Proporciona operaciones reactivas para crear, actualizar y eliminar transacciones.
- * La única referencia que hay que validar es el tipo de transacción: los tags son texto
- * libre y, si el usuario escribe uno que todavía no tiene, se da de alta en su catálogo
- * sobre la marcha.
+ * Hay dos referencias que validar, el tipo y la categoría, y no se validan por separado:
+ * la categoría declara a qué tipo de movimiento se ofrece, así que se comprueban como
+ * pareja. Los tags, en cambio, son texto libre y, si el usuario escribe uno que todavía no
+ * tiene, se da de alta en su catálogo sobre la marcha.
  */
 @Service
 @RequiredArgsConstructor
@@ -38,6 +45,7 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
 
   private final TransactionRepository transactionRepository;
   private final TransactionTypeRepository transactionTypeRepository;
+  private final CategoryRepository categoryRepository;
   private final TagRepository tagRepository;
   private final TransactionTagRepository transactionTagRepository;
   private final Clock clock;
@@ -46,6 +54,7 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
   public Mono<Transaction> createTransaction(Long userId, CreateTransactionRequest request) {
     List<String> tags = normalizeTags(request.getTags());
     return requireTransactionType(request.getTransactionTypeId())
+        .flatMap(type -> requireUsableCategory(userId, request.getCategoryId(), type))
         .then(Mono.defer(() -> transactionRepository.save(toEntity(userId, request))))
         .flatMap(saved -> replaceTags(userId, saved.getId(), tags).thenReturn(saved));
   }
@@ -57,7 +66,7 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
     return transactionRepository.findByIdAndUserId(id, userId)
         .switchIfEmpty(Mono.error(new TransactionNotFoundException(
             Constants.TRANSACTION_NOT_FOUND + id)))
-        .flatMap(transaction -> requireTransactionType(request.getTransactionTypeId())
+        .flatMap(transaction -> requireValidReferences(userId, transaction, request)
             .thenReturn(applyChanges(transaction, request)))
         .flatMap(transactionRepository::save)
         .flatMap(saved -> request.getTags() == null
@@ -88,6 +97,7 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
     transaction.setDescription(request.getDescription());
     transaction.setDate(request.getDate() == null ? LocalDateTime.now(clock) : request.getDate());
     transaction.setTransactionTypeId(request.getTransactionTypeId());
+    transaction.setCategoryId(request.getCategoryId());
     return transaction;
   }
 
@@ -111,24 +121,87 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
     if (request.getTransactionTypeId() != null) {
       transaction.setTransactionTypeId(request.getTransactionTypeId());
     }
+    if (request.getCategoryId() != null) {
+      transaction.setCategoryId(request.getCategoryId());
+    }
     return transaction;
   }
 
   /**
-   * Verifica que el tipo de transacción indicado exista.
-   * Un identificador nulo corresponde a un campo no informado y se omite.
+   * Comprueba las referencias con las que quedará la transacción después de actualizarla.
+   * Se validan como pareja y con los valores efectivos, no con los recibidos: cambiar el
+   * tipo de un egreso a ingreso sin tocar la categoría podría dejarla clasificada con una
+   * categoría de egresos, y eso es tan inválido como elegir esa categoría a mano.
+   * Si la petición no toca ninguna de las dos, no hay nada que revalidar.
    *
-   * @param transactionTypeId identificador del tipo de transacción
-   * @return Mono vacío si la referencia es válida
+   * @param userId      identificador del usuario propietario
+   * @param transaction transacción tal y como está guardada
+   * @param request     datos a actualizar
+   * @return Mono vacío si las referencias son válidas
    */
-  private Mono<Void> requireTransactionType(Long transactionTypeId) {
-    if (transactionTypeId == null) {
+  private Mono<Void> requireValidReferences(Long userId, Transaction transaction,
+                                            UpdateTransactionRequest request) {
+    if (request.getTransactionTypeId() == null && request.getCategoryId() == null) {
       return Mono.empty();
     }
+    Long typeId = request.getTransactionTypeId() == null
+        ? transaction.getTransactionTypeId()
+        : request.getTransactionTypeId();
+    Long categoryId = request.getCategoryId() == null
+        ? transaction.getCategoryId()
+        : request.getCategoryId();
+    return requireTransactionType(typeId)
+        .flatMap(type -> requireUsableCategory(userId, categoryId, type))
+        .then();
+  }
+
+  /**
+   * Obtiene el tipo de transacción indicado o falla si no existe.
+   *
+   * @param transactionTypeId identificador del tipo de transacción
+   * @return el tipo de transacción encontrado
+   */
+  private Mono<TransactionType> requireTransactionType(Long transactionTypeId) {
     return transactionTypeRepository.findById(transactionTypeId)
         .switchIfEmpty(Mono.error(new TransactionTypeNotFoundException(
-            Constants.TRANSACTION_TYPE_NOT_FOUND + transactionTypeId)))
-        .then();
+            Constants.TRANSACTION_TYPE_NOT_FOUND + transactionTypeId)));
+  }
+
+  /**
+   * Obtiene la categoría indicada y comprueba que pueda clasificar ese tipo de movimiento.
+   * La búsqueda acota por propietario, de modo que la categoría de otra cuenta se comporta
+   * igual que una inexistente.
+   *
+   * @param userId     identificador del usuario propietario
+   * @param categoryId identificador de la categoría
+   * @param type       tipo de la transacción
+   * @return la categoría encontrada
+   */
+  private Mono<Category> requireUsableCategory(Long userId, Long categoryId,
+                                               TransactionType type) {
+    return categoryRepository.findByIdAndUserId(categoryId, userId)
+        .switchIfEmpty(Mono.error(new CategoryNotFoundException(
+            Constants.CATEGORY_NOT_FOUND + categoryId)))
+        .flatMap(category -> admits(category, type)
+            ? Mono.just(category)
+            : Mono.error(new CategoryNotApplicableException(
+                Constants.CATEGORY_NOT_APPLICABLE.replace("{}", category.getName()))));
+  }
+
+  /**
+   * Decide si una categoría puede clasificar un tipo de movimiento.
+   * Una categoría sin ámbito declarado se admite en cualquiera: el campo solo existe para
+   * afinar lo que propone el formulario, no para bloquear lo que el usuario ya eligió.
+   *
+   * @param category categoría elegida
+   * @param type     tipo de la transacción
+   * @return si la categoría admite ese tipo
+   */
+  private boolean admits(Category category, TransactionType type) {
+    String scope = category.getAppliesTo();
+    return scope == null
+        || CategoryScope.BOTH.getValue().equals(scope)
+        || scope.equals(type.getCode());
   }
 
   /**

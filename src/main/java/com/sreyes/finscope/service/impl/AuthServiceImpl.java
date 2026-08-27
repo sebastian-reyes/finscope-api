@@ -16,6 +16,7 @@ import com.sreyes.finscope.repository.UserRepository;
 import com.sreyes.finscope.security.JwtProperties;
 import com.sreyes.finscope.security.JwtService;
 import com.sreyes.finscope.service.AuthService;
+import com.sreyes.finscope.service.CategoryService;
 import com.sreyes.finscope.util.constants.Constants;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -45,6 +46,7 @@ public class AuthServiceImpl implements AuthService {
 
   private final UserRepository userRepository;
   private final UserIdentityRepository userIdentityRepository;
+  private final CategoryService categoryService;
   private final RefreshTokenRepository refreshTokenRepository;
   private final JwtService jwtService;
   private final JwtProperties jwtProperties;
@@ -116,7 +118,10 @@ public class AuthServiceImpl implements AuthService {
     user.setActive(true);
     user.setCreatedAt(LocalDateTime.now(clock));
     return userRepository.save(user)
-        .flatMap(saved -> saveLocalIdentity(saved).thenReturn(saved));
+        .flatMap(saved -> saveLocalIdentity(saved).thenReturn(saved))
+        // La categoría es obligatoria en cada movimiento, así que una cuenta sin catálogo
+        // no podría registrar ninguno: se siembra aquí, antes de devolver las credenciales.
+        .flatMap(saved -> categoryService.seedDefaults(saved.getId()).thenReturn(saved));
   }
 
   /**

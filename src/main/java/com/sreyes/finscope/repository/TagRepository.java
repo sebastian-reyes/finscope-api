@@ -1,6 +1,7 @@
 package com.sreyes.finscope.repository;
 
 import com.sreyes.finscope.model.entity.Tag;
+import com.sreyes.finscope.model.query.TagUsage;
 import com.sreyes.finscope.model.query.TransactionTagName;
 import java.util.Collection;
 import org.springframework.data.r2dbc.repository.Modifying;
@@ -104,4 +105,50 @@ public interface TagRepository extends R2dbcRepository<Tag, Long> {
       ON CONFLICT DO NOTHING
       """)
   Mono<Long> insertIfAbsent(Long userId, String name);
+
+  /**
+   * Obtiene el catálogo completo de tags del usuario junto al uso que les está dando.
+   * La unión es externa porque un tag que todavía no usa ninguna transacción sigue
+   * ocupando su nombre, de modo que el usuario debe poder verlo para poder borrarlo.
+   * El conteo se resuelve aquí, en una sola consulta, en lugar de preguntarlo tag a tag.
+   *
+   * @param userId identificador del usuario propietario
+   * @return flujo reactivo con los tags y su número de transacciones, en orden alfabético
+   */
+  @Query("""
+      SELECT t.id_tag AS tag_id, t.name_tag AS tag_name,
+             COUNT(tt.transaction_id) AS transaction_count
+      FROM tags t
+      LEFT JOIN transaction_tags tt ON tt.tag_id = t.id_tag
+      WHERE t.user_id = :userId
+      GROUP BY t.id_tag, t.name_tag
+      ORDER BY LOWER(t.name_tag)
+      """)
+  Flux<TagUsage> findUsageByUserId(Long userId);
+
+  /**
+   * Busca un tag del usuario por su identificador.
+   * Acota por propietario para que nadie pueda alcanzar el tag de otra cuenta conociendo
+   * su identificador.
+   *
+   * @param id     identificador del tag
+   * @param userId identificador del usuario propietario
+   * @return el tag encontrado envuelto en Mono
+   */
+  Mono<Tag> findByIdAndUserId(Long id, Long userId);
+
+  /**
+   * Busca el tag del usuario que se llama como el nombre indicado, sin distinguir
+   * mayúsculas de minúsculas.
+   *
+   * @param userId identificador del usuario propietario
+   * @param name   nombre buscado, con cualquier grafía
+   * @return el tag encontrado envuelto en Mono
+   */
+  @Query("""
+      SELECT *
+      FROM tags
+      WHERE user_id = :userId AND LOWER(name_tag) = LOWER(:name)
+      """)
+  Mono<Tag> findByUserIdAndName(Long userId, String name);
 }

@@ -24,6 +24,7 @@ import com.sreyes.finscope.repository.UserIdentityRepository;
 import com.sreyes.finscope.repository.UserRepository;
 import com.sreyes.finscope.security.JwtProperties;
 import com.sreyes.finscope.security.JwtService;
+import com.sreyes.finscope.service.CategoryService;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -66,6 +67,9 @@ class AuthServiceImplTest {
   @Mock
   private JwtService jwtService;
 
+  @Mock
+  private CategoryService categoryService;
+
   private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
   private AuthServiceImpl authService;
@@ -74,9 +78,11 @@ class AuthServiceImplTest {
   void setUp() {
     JwtProperties jwtProperties = new JwtProperties("clave-de-firma-de-al-menos-32-caracteres",
         "finscope-api", Duration.ofMinutes(15), Duration.ofDays(30));
-    authService = new AuthServiceImpl(userRepository, userIdentityRepository,
+    authService = new AuthServiceImpl(userRepository, userIdentityRepository, categoryService,
         refreshTokenRepository, jwtService, jwtProperties, passwordEncoder,
         Clock.systemDefaultZone());
+    // Toda cuenta nace con su catálogo: sin él no podría registrar ni un movimiento.
+    when(categoryService.seedDefaults(anyLong())).thenReturn(Mono.empty());
     when(jwtService.issueAccessToken(any(User.class))).thenReturn("access-token");
     when(jwtService.accessTokenExpiresInSeconds()).thenReturn(900L);
     when(refreshTokenRepository.save(any(RefreshToken.class)))

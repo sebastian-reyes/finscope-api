@@ -4,16 +4,23 @@ info:
   description: |
     API reactiva de FinScope para la gestion de finanzas personales.
 
-    El modelo se reduce a tres piezas: la transaccion, su tipo y sus tags.
+    El modelo se reduce a cuatro piezas: la transaccion, su tipo, su categoria y sus
+    tags.
     El tipo es un catalogo cerrado de dos valores, ingreso y egreso, porque de el
-    depende el signo del importe. Los tags son texto libre del usuario y se comparten
-    entre sus transacciones: nacen al escribirlos dentro de una, de modo que clasificar
-    no obliga a mantener un catalogo previo, y se reutilizan cuando vuelve a usarlos.
+    depende el signo del importe.
+
+    La categoria y los tags responden preguntas distintas y no son intercambiables. La
+    categoria dice en que se gasto y es exactamente una por transaccion, de modo que la
+    suma por categoria coincide con el total del periodo y puede repartirse en
+    porcentajes. Los tags dicen con quien, para que o en que contexto ocurrio el gasto,
+    son cero o varios por transaccion y por tanto se solapan: sus importes nunca reparten
+    un total. Ambos son catalogos del usuario, editables y compartidos entre sus
+    transacciones.
 
     Todos los recursos financieros pertenecen al usuario autenticado y estan aislados
     entre usuarios. Salvo los endpoints de autenticacion, todas las operaciones exigen
     un token de acceso.
-  version: 4.0.0
+  version: 6.0.0
 servers:
   - url: /
     description: Servidor local
@@ -26,8 +33,12 @@ tags:
     description: Consulta de tipos de transaccion
   - name: transactions
     description: Gestion y consulta de transacciones
+  - name: categories
+    description: Gestion del catalogo de categorias del usuario
   - name: tags
-    description: Consulta de los tags en uso
+    description: Gestion del catalogo de tags del usuario
+  - name: summary
+    description: Agregados financieros calculados sobre las transacciones
 
 paths:
   /auth/register:
@@ -177,26 +188,189 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /tags:
+  /categories:
     get:
-      tags: [tags]
-      summary: Lista los tags que el usuario ya ha usado
+      tags: [categories]
+      summary: Lista las categorias del usuario
       description: |
-        Devuelve los nombres de tag que el usuario esta usando, ordenados alfabeticamente.
-        Sirve para ofrecer autocompletado al escribir; no hay catalogo que mantener, porque
-        los tags se crean al vuelo dentro de cada transaccion.
-        Un tag aparece una sola vez aunque lo lleven muchas transacciones, y deja de
-        sugerirse cuando ninguna lo usa.
-      operationId: listTags
+        Devuelve el catalogo completo de categorias del usuario, ordenado alfabeticamente,
+        con el numero de transacciones que clasifica cada una.
+        El catalogo se siembra al registrarse con un juego inicial de categorias y desde
+        ahi es del usuario: puede anadir, renombrar y eliminar las que quiera.
+      operationId: listCategories
       responses:
         "200":
-          description: Listado de nombres de tag
+          description: Listado de categorias
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  type: string
+                  $ref: "#/components/schemas/CategoryResponse"
+    post:
+      tags: [categories]
+      summary: Crea una categoria
+      description: |
+        El nombre debe estar libre dentro del catalogo del usuario sin distinguir
+        mayusculas, igual que en los tags.
+      operationId: createCategory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveCategoryRequest"
+      responses:
+        "201":
+          description: Categoria creada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CategoryResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /categories/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathId"
+    patch:
+      tags: [categories]
+      summary: Actualiza una categoria
+      description: |
+        Cambia el nombre o el tipo de movimiento al que se ofrece la categoria. El cambio
+        alcanza a todas las transacciones que clasifica, porque la categoria es una sola y
+        se comparte entre ellas.
+        Los campos ausentes se dejan como estan. Renombrar a un nombre ya ocupado se
+        rechaza en lugar de fusionar las dos categorias, para que la operacion nunca
+        destruya informacion sin avisar.
+      operationId: updateCategory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveCategoryRequest"
+      responses:
+        "200":
+          description: Categoria actualizada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CategoryResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    delete:
+      tags: [categories]
+      summary: Elimina una categoria
+      description: |
+        Elimina la categoria del catalogo. Las transacciones que clasificaba pasan a la
+        categoria de reserva del usuario, la marcada con isSystem: como toda transaccion
+        tiene exactamente una categoria, no pueden quedarse sin ninguna.
+        La categoria de reserva no se puede eliminar.
+      operationId: deleteCategory
+      responses:
+        "204":
+          description: Categoria eliminada
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /tags:
+    get:
+      tags: [tags]
+      summary: Lista los tags del usuario
+      description: |
+        Devuelve el catalogo completo de tags del usuario, ordenado alfabeticamente, con el
+        numero de transacciones que lleva cada uno. Sirve para ofrecer autocompletado al
+        escribir y para administrar el catalogo.
+        Se incluyen los tags que todavia no usa ninguna transaccion, con transactionCount a
+        cero: siguen ocupando su nombre, asi que el usuario debe poder verlos y borrarlos.
+      operationId: listTags
+      responses:
+        "200":
+          description: Listado de tags
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TagResponse"
+    post:
+      tags: [tags]
+      summary: Crea un tag en el catalogo del usuario
+      description: |
+        Alta explicita de un tag, para preparar el catalogo sin registrar una transaccion.
+        No es la via habitual: los tags siguen naciendo al escribirlos dentro de una.
+      operationId: createTag
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveTagRequest"
+      responses:
+        "201":
+          description: Tag creado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TagResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /tags/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathId"
+    patch:
+      tags: [tags]
+      summary: Renombra un tag
+      description: |
+        Cambia el nombre del tag en todas las transacciones que lo llevan, porque el tag es
+        uno solo y se comparte entre ellas.
+        El nombre debe seguir libre dentro del catalogo del usuario sin distinguir
+        mayusculas: renombrar a un nombre ya existente se rechaza en lugar de fusionar los
+        dos tags, para que la operacion nunca destruya informacion sin avisar.
+      operationId: updateTag
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveTagRequest"
+      responses:
+        "200":
+          description: Tag renombrado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TagResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    delete:
+      tags: [tags]
+      summary: Elimina un tag
+      description: |
+        Elimina el tag del catalogo y lo retira de todas las transacciones que lo llevan.
+        Las transacciones no se tocan: solo dejan de estar clasificadas por el.
+      operationId: deleteTag
+      responses:
+        "204":
+          description: Tag eliminado
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /transactions:
     get:
@@ -208,52 +382,13 @@ paths:
         y no pueden combinarse con dateFrom o dateTo.
       operationId: listTransactions
       parameters:
-        - name: month
-          in: query
-          description: Mes de la transaccion, entre 1 y 12
-          required: false
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 12
-        - name: year
-          in: query
-          description: Anio de la transaccion
-          required: false
-          schema:
-            type: integer
-            minimum: 1970
-            maximum: 9999
-        - name: dateFrom
-          in: query
-          description: Fecha inicial inclusiva
-          required: false
-          schema:
-            type: string
-            format: date-time
-        - name: dateTo
-          in: query
-          description: Fecha final inclusiva
-          required: false
-          schema:
-            type: string
-            format: date-time
-        - name: transactionTypeId
-          in: query
-          description: Filtra por tipo de transaccion
-          required: false
-          schema:
-            type: integer
-            format: int64
-        - name: tag
-          in: query
-          description: |
-            Devuelve unicamente las transacciones que llevan el tag indicado.
-            La comparacion no distingue mayusculas de minusculas.
-          required: false
-          schema:
-            type: string
-            maxLength: 70
+        - $ref: "#/components/parameters/MonthFilter"
+        - $ref: "#/components/parameters/YearFilter"
+        - $ref: "#/components/parameters/DateFromFilter"
+        - $ref: "#/components/parameters/DateToFilter"
+        - $ref: "#/components/parameters/TransactionTypeIdFilter"
+        - $ref: "#/components/parameters/CategoryIdFilter"
+        - $ref: "#/components/parameters/TagFilter"
         - name: page
           in: query
           description: Numero de pagina, empezando en cero
@@ -310,6 +445,75 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "404":
           $ref: "#/components/responses/NotFound"
+
+  /transactions/summary:
+    get:
+      tags: [summary]
+      summary: Resume las transacciones que cumplen los filtros
+      description: |
+        Devuelve los totales de ingresos y egresos del periodo y su desglose por tag, sin
+        paginar y sin traerse las transacciones. Acepta exactamente los mismos filtros que
+        el listado y los combina igual, de modo que un resumen siempre corresponde con lo
+        que devolveria el listado con esos mismos filtros.
+
+        Los importes de byTag no suman el total: una transaccion con varios tags aporta su
+        importe integro a cada uno, porque el modelo no define como repartirlo. El cliente
+        debe presentarlo como gasto por tag y no como un reparto porcentual del total.
+      operationId: getTransactionSummary
+      parameters:
+        - $ref: "#/components/parameters/MonthFilter"
+        - $ref: "#/components/parameters/YearFilter"
+        - $ref: "#/components/parameters/DateFromFilter"
+        - $ref: "#/components/parameters/DateToFilter"
+        - $ref: "#/components/parameters/TransactionTypeIdFilter"
+        - $ref: "#/components/parameters/CategoryIdFilter"
+        - $ref: "#/components/parameters/TagFilter"
+      responses:
+        "200":
+          description: Resumen del periodo
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransactionSummaryResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /transactions/summary/series:
+    get:
+      tags: [summary]
+      summary: Resume las transacciones agrupadas por tramos de tiempo
+      description: |
+        Agrupa ingresos y egresos en tramos consecutivos del tamanio indicado por
+        granularity, para dibujar la evolucion financiera.
+        Solo se devuelven los tramos que tienen alguna transaccion: el cliente conoce el
+        rango y la granularidad, asi que puede completar los huecos con ceros sin que el
+        servidor tenga que materializar tramos vacios.
+      operationId: getTransactionSummarySeries
+      parameters:
+        - $ref: "#/components/parameters/MonthFilter"
+        - $ref: "#/components/parameters/YearFilter"
+        - $ref: "#/components/parameters/DateFromFilter"
+        - $ref: "#/components/parameters/DateToFilter"
+        - $ref: "#/components/parameters/TransactionTypeIdFilter"
+        - $ref: "#/components/parameters/CategoryIdFilter"
+        - $ref: "#/components/parameters/TagFilter"
+        - name: granularity
+          in: query
+          description: Tamanio de cada tramo
+          required: false
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/SummaryGranularity"
+            default: MONTH
+      responses:
+        "200":
+          description: Serie temporal del periodo
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SummarySeriesResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
 
   /transactions/{id}:
     parameters:
@@ -382,6 +586,66 @@ components:
       schema:
         type: integer
         format: int64
+    MonthFilter:
+      name: month
+      in: query
+      description: Mes de la transaccion, entre 1 y 12
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 12
+    YearFilter:
+      name: year
+      in: query
+      description: Anio de la transaccion
+      required: false
+      schema:
+        type: integer
+        minimum: 1970
+        maximum: 9999
+    DateFromFilter:
+      name: dateFrom
+      in: query
+      description: Fecha inicial inclusiva
+      required: false
+      schema:
+        type: string
+        format: date-time
+    DateToFilter:
+      name: dateTo
+      in: query
+      description: Fecha final inclusiva
+      required: false
+      schema:
+        type: string
+        format: date-time
+    TransactionTypeIdFilter:
+      name: transactionTypeId
+      in: query
+      description: Filtra por tipo de transaccion
+      required: false
+      schema:
+        type: integer
+        format: int64
+    CategoryIdFilter:
+      name: categoryId
+      in: query
+      description: Filtra por categoria principal
+      required: false
+      schema:
+        type: integer
+        format: int64
+    TagFilter:
+      name: tag
+      in: query
+      description: |
+        Devuelve unicamente las transacciones que llevan el tag indicado.
+        La comparacion no distingue mayusculas de minusculas.
+      required: false
+      schema:
+        type: string
+        maxLength: 70
 
   responses:
     BadRequest:
@@ -497,9 +761,51 @@ components:
             Codigo estable del tipo. Determina el signo del importe en los calculos.
           enum: [INCOME, EXPENSE]
 
+    CategoryScope:
+      type: string
+      description: |
+        Tipo de movimiento al que se ofrece una categoria. BOTH la ofrece en los dos.
+        Solo decide que categorias propone el formulario de registro; no restringe lo que
+        ya esta guardado.
+      enum: [EXPENSE, INCOME, BOTH]
+
+    CategoryResponse:
+      type: object
+      description: Categoria del catalogo del usuario
+      required: [id, name, appliesTo, isSystem, transactionCount]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        appliesTo:
+          $ref: "#/components/schemas/CategoryScope"
+        isSystem:
+          type: boolean
+          description: |
+            Categoria de reserva del usuario. Recibe las transacciones de las categorias
+            que se eliminan y por eso no puede eliminarse ella misma.
+        transactionCount:
+          type: integer
+          format: int64
+          description: Cuantas transacciones del usuario clasifica esta categoria
+
+    SaveCategoryRequest:
+      type: object
+      description: Cuerpo de alta y de actualizacion de una categoria
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 70
+        appliesTo:
+          $ref: "#/components/schemas/CategoryScope"
+
     TransactionResponse:
       type: object
-      required: [id, amount, date, transactionType, tags]
+      required: [id, amount, date, transactionType, category, tags]
       properties:
         id:
           type: integer
@@ -514,6 +820,8 @@ components:
           format: date-time
         transactionType:
           $ref: "#/components/schemas/TransactionTypeResponse"
+        category:
+          $ref: "#/components/schemas/CategoryResponse"
         tags:
           type: array
           description: Tags de la transaccion, en orden alfabetico
@@ -522,7 +830,7 @@ components:
 
     CreateTransactionRequest:
       type: object
-      required: [amount, transactionTypeId]
+      required: [amount, transactionTypeId, categoryId]
       properties:
         amount:
           type: number
@@ -538,6 +846,12 @@ components:
         transactionTypeId:
           type: integer
           format: int64
+        categoryId:
+          type: integer
+          format: int64
+          description: |
+            Categoria principal, obligatoria. Debe pertenecer al usuario y admitir el tipo
+            de la transaccion.
         tags:
           type: array
           description: |
@@ -567,6 +881,12 @@ components:
         transactionTypeId:
           type: integer
           format: int64
+        categoryId:
+          type: integer
+          format: int64
+          description: |
+            Cambia la categoria principal. Debe pertenecer al usuario y admitir el tipo
+            que tendra la transaccion despues de la actualizacion.
         tags:
           type: array
           description: |
@@ -595,6 +915,142 @@ components:
           format: int64
         totalPages:
           type: integer
+
+    TagResponse:
+      type: object
+      description: Tag del catalogo del usuario
+      required: [id, name, transactionCount]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        transactionCount:
+          type: integer
+          format: int64
+          description: Cuantas transacciones del usuario llevan este tag
+
+    SaveTagRequest:
+      type: object
+      description: Nombre de un tag al crearlo o al renombrarlo
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 70
+          description: |
+            Se recortan los espacios sobrantes. No puede coincidir con otro tag del mismo
+            usuario sin distinguir mayusculas.
+
+    TransactionSummaryResponse:
+      type: object
+      description: Totales del periodo y sus desgloses por categoria y por tag
+      required: [income, expense, net, transactionCount, byCategory, byTag]
+      properties:
+        income:
+          type: number
+          description: Suma de los importes de tipo INCOME, siempre positiva
+        expense:
+          type: number
+          description: Suma de los importes de tipo EXPENSE, siempre positiva
+        net:
+          type: number
+          description: Diferencia entre income y expense, negativa si se gasto de mas
+        transactionCount:
+          type: integer
+          format: int64
+        byCategory:
+          type: array
+          description: |
+            Desglose por categoria, ordenado de mayor a menor egreso. Como cada
+            transaccion tiene exactamente una categoria, sus importes suman el total del
+            periodo y pueden presentarse como un reparto porcentual.
+          items:
+            $ref: "#/components/schemas/CategorySummaryResponse"
+        byTag:
+          type: array
+          description: |
+            Desglose por tag, ordenado de mayor a menor egreso. Sus importes no suman el
+            total del periodo, porque una transaccion con varios tags aporta su importe
+            integro a cada uno. Es un analisis de contexto y no una distribucion del
+            gasto: para eso esta byCategory.
+          items:
+            $ref: "#/components/schemas/TagSummaryResponse"
+
+    CategorySummaryResponse:
+      type: object
+      description: Ingresos y egresos acumulados por una categoria dentro del periodo
+      required: [categoryId, category, income, expense, transactionCount]
+      properties:
+        categoryId:
+          type: integer
+          format: int64
+        category:
+          type: string
+          description: Nombre de la categoria
+        income:
+          type: number
+        expense:
+          type: number
+        transactionCount:
+          type: integer
+          format: int64
+
+    TagSummaryResponse:
+      type: object
+      description: Ingresos y egresos acumulados por un tag dentro del periodo
+      required: [income, expense, transactionCount]
+      properties:
+        tag:
+          type: string
+          nullable: true
+          description: Nombre del tag, o nulo para las transacciones que no llevan ninguno
+        income:
+          type: number
+        expense:
+          type: number
+        transactionCount:
+          type: integer
+          format: int64
+
+    SummaryGranularity:
+      type: string
+      description: Tamanio de cada tramo de una serie temporal
+      enum: [DAY, WEEK, MONTH]
+
+    SummarySeriesResponse:
+      type: object
+      description: Evolucion de ingresos y egresos a lo largo del periodo
+      required: [granularity, buckets]
+      properties:
+        granularity:
+          $ref: "#/components/schemas/SummaryGranularity"
+        buckets:
+          type: array
+          description: Tramos con alguna transaccion, en orden cronologico
+          items:
+            $ref: "#/components/schemas/SummaryBucketResponse"
+
+    SummaryBucketResponse:
+      type: object
+      description: Totales de un tramo de la serie
+      required: [periodStart, income, expense, net, transactionCount]
+      properties:
+        periodStart:
+          type: string
+          format: date-time
+          description: Instante inicial del tramo, inclusivo
+        income:
+          type: number
+        expense:
+          type: number
+        net:
+          type: number
+        transactionCount:
+          type: integer
+          format: int64
 
     ErrorResponse:
       type: object

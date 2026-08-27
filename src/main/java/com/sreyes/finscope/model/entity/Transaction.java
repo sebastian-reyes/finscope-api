@@ -14,7 +14,9 @@ import org.springframework.data.relational.core.mapping.Table;
  * Está mapeada a la tabla `transactions` en la base de datos.
  * El importe se guarda siempre en positivo; el signo lo aporta el tipo de transacción,
  * que indica si se trata de un ingreso o de un egreso.
- * Sus tags se almacenan en la tabla `tags`, que depende de esta.
+ * Lleva exactamente una categoría, que es lo que dice en qué se gastó y permite repartir
+ * el total del periodo sin contar nada dos veces, y además cero o varios tags, que dicen
+ * en qué contexto ocurrió y viven en la tabla de enlace `transaction_tags`.
  */
 @Table("transactions")
 @Data
@@ -40,5 +42,12 @@ public class Transaction {
 
   @Column("transaction_type_id")
   private Long transactionTypeId;
+
+  /**
+   * Categoría principal. Es obligatoria: sin ella el reparto del gasto por categoría
+   * dejaría transacciones fuera y no sumaría el total del periodo.
+   */
+  @Column("category_id")
+  private Long categoryId;
 
 }

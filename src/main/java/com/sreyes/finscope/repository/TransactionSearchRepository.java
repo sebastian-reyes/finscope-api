@@ -72,6 +72,9 @@ public class TransactionSearchRepository {
     if (filter.transactionTypeId() != null) {
       criteria.add(Criteria.where("transactionTypeId").is(filter.transactionTypeId()));
     }
+    if (filter.categoryId() != null) {
+      criteria.add(Criteria.where("categoryId").is(filter.categoryId()));
+    }
     if (filter.transactionIds() != null) {
       criteria.add(Criteria.where("id").in(filter.transactionIds()));
     }

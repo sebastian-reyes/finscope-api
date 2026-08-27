@@ -11,6 +11,7 @@ import java.util.List;
  * @param dateFrom          fecha inicial inclusiva
  * @param dateTo            fecha final inclusiva
  * @param transactionTypeId identificador del tipo de transacción
+ * @param categoryId        identificador de la categoría principal
  * @param transactionIds    restricción al conjunto de transacciones indicado, usada para
  *                          resolver el filtro por tag
  */
@@ -19,5 +20,6 @@ public record TransactionFilter(
     LocalDateTime dateFrom,
     LocalDateTime dateTo,
     Long transactionTypeId,
+    Long categoryId,
     List<Long> transactionIds) {
 }

@@ -11,6 +11,15 @@ public final class Constants {
 
   public static final String TRANSACTION_NOT_FOUND = "Transaction not found with id: ";
   public static final String TRANSACTION_TYPE_NOT_FOUND = "Transaction type not found with id: ";
+  public static final String TAG_NOT_FOUND = "Tag not found with id: ";
+  public static final String TAG_NAME_ALREADY_USED = "A tag named {} already exists";
+  public static final String CATEGORY_NOT_FOUND = "Category not found with id: ";
+  public static final String CATEGORY_NAME_ALREADY_USED = "A category named {} already exists";
+  public static final String CATEGORY_NOT_APPLICABLE =
+      "Category {} cannot be used on this kind of transaction";
+  public static final String SYSTEM_CATEGORY_PROTECTED =
+      "The fallback category cannot be deleted: it receives the transactions of the categories "
+          + "you remove";
 
   public static final String INVALID_MONTH = "Invalid month. Month must be between 1 and 12.";
   public static final String INVALID_DATE_RANGE = "Invalid date range. dateFrom must be before dateTo.";

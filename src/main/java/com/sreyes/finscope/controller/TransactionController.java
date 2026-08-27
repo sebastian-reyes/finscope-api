@@ -36,10 +36,10 @@ public class TransactionController implements TransactionsApi {
   @Override
   public Mono<ResponseEntity<TransactionPageResponse>> listTransactions(
       Integer month, Integer year, LocalDateTime dateFrom, LocalDateTime dateTo,
-      Long transactionTypeId, String tag, Integer page, Integer size, String sort,
-      ServerWebExchange exchange) {
+      Long transactionTypeId, Long categoryId, String tag, Integer page, Integer size,
+      String sort, ServerWebExchange exchange) {
     TransactionSearchCriteria criteria = new TransactionSearchCriteria(month, year, dateFrom,
-        dateTo, transactionTypeId, tag, page, size, sort);
+        dateTo, transactionTypeId, categoryId, tag, page, size, sort);
     return authenticatedUser.currentUserId()
         .flatMap(userId -> transactionQueryService.searchTransactions(userId, criteria))
         .map(ResponseEntity::ok);

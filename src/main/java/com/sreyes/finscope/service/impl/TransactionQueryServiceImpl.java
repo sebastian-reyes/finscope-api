@@ -2,14 +2,16 @@ package com.sreyes.finscope.service.impl;
 
 import com.sreyes.finscope.api.model.TransactionPageResponse;
 import com.sreyes.finscope.api.model.TransactionResponse;
-import com.sreyes.finscope.exception.custom.DateNotFoundException;
 import com.sreyes.finscope.exception.custom.InvalidSortException;
 import com.sreyes.finscope.exception.custom.TransactionNotFoundException;
+import com.sreyes.finscope.model.entity.Category;
 import com.sreyes.finscope.model.entity.Transaction;
 import com.sreyes.finscope.model.entity.TransactionType;
+import com.sreyes.finscope.model.query.DateRange;
 import com.sreyes.finscope.model.query.TransactionFilter;
 import com.sreyes.finscope.model.query.TransactionSearchCriteria;
 import com.sreyes.finscope.model.query.TransactionTagName;
+import com.sreyes.finscope.repository.CategoryRepository;
 import com.sreyes.finscope.repository.TagRepository;
 import com.sreyes.finscope.repository.TransactionRepository;
 import com.sreyes.finscope.repository.TransactionSearchRepository;
@@ -17,9 +19,7 @@ import com.sreyes.finscope.repository.TransactionTypeRepository;
 import com.sreyes.finscope.service.TransactionQueryService;
 import com.sreyes.finscope.util.constants.Constants;
 import com.sreyes.finscope.util.mapper.TransactionMapper;
-import java.time.LocalDateTime;
-import java.time.LocalTime;
-import java.time.YearMonth;
+import com.sreyes.finscope.util.query.DateRanges;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -55,6 +55,7 @@ public class TransactionQueryServiceImpl implements TransactionQueryService {
   private final TransactionRepository transactionRepository;
   private final TransactionSearchRepository transactionSearchRepository;
   private final TransactionTypeRepository transactionTypeRepository;
+  private final CategoryRepository categoryRepository;
   private final TagRepository tagRepository;
   private final TransactionMapper transactionMapper;
 
@@ -102,7 +103,8 @@ public class TransactionQueryServiceImpl implements TransactionQueryService {
    */
   private Mono<TransactionFilter> resolveFilter(Long userId,
                                                 TransactionSearchCriteria criteria) {
-    return Mono.fromCallable(() -> resolveDateRange(criteria))
+    return Mono.fromCallable(() -> DateRanges.resolve(criteria.month(), criteria.year(),
+            criteria.dateFrom(), criteria.dateTo()))
         .flatMap(range -> criteria.tag() == null || criteria.tag().isBlank()
             ? Mono.just(buildFilter(userId, criteria, range, null))
             : tagRepository.findTransactionIdsByUserIdAndName(userId, criteria.tag().trim())
@@ -123,51 +125,7 @@ public class TransactionQueryServiceImpl implements TransactionQueryService {
   private TransactionFilter buildFilter(Long userId, TransactionSearchCriteria criteria,
                                         DateRange range, List<Long> transactionIds) {
     return new TransactionFilter(userId, range.from(), range.to(),
-        criteria.transactionTypeId(), transactionIds);
-  }
-
-  /**
-   * Resuelve el rango de fechas efectivo a partir de los filtros recibidos.
-   * Los filtros de mes y año son un atajo para acotar a un mes natural completo y no pueden
-   * combinarse con un rango explícito de fechas.
-   *
-   * @param criteria filtros solicitados
-   * @return el rango de fechas aplicable, con extremos nulos si no se filtra por fecha
-   */
-  private DateRange resolveDateRange(TransactionSearchCriteria criteria) {
-    boolean hasMonthFilter = criteria.month() != null || criteria.year() != null;
-    boolean hasRangeFilter = criteria.dateFrom() != null || criteria.dateTo() != null;
-
-    if (hasMonthFilter && hasRangeFilter) {
-      throw new DateNotFoundException(Constants.CONFLICTING_DATE_FILTERS);
-    }
-    if (hasMonthFilter) {
-      return resolveMonthRange(criteria.month(), criteria.year());
-    }
-    if (criteria.dateFrom() != null && criteria.dateTo() != null
-        && criteria.dateFrom().isAfter(criteria.dateTo())) {
-      throw new DateNotFoundException(Constants.INVALID_DATE_RANGE);
-    }
-    return new DateRange(criteria.dateFrom(), criteria.dateTo());
-  }
-
-  /**
-   * Convierte el filtro de mes y año en el rango de fechas que abarca ese mes completo.
-   *
-   * @param month mes solicitado
-   * @param year  año solicitado
-   * @return el rango de fechas correspondiente al mes indicado
-   */
-  private DateRange resolveMonthRange(Integer month, Integer year) {
-    if (month == null || year == null) {
-      throw new DateNotFoundException(Constants.INCOMPLETE_MONTH_FILTER);
-    }
-    if (month < 1 || month > 12) {
-      throw new DateNotFoundException(Constants.INVALID_MONTH);
-    }
-    YearMonth yearMonth = YearMonth.of(year, month);
-    return new DateRange(yearMonth.atDay(1).atStartOfDay(),
-        yearMonth.atEndOfMonth().atTime(LocalTime.MAX));
+        criteria.transactionTypeId(), criteria.categoryId(), transactionIds);
   }
 
   /**
@@ -219,7 +177,7 @@ public class TransactionQueryServiceImpl implements TransactionQueryService {
 
   /**
    * Ensambla la representación de cada transacción cargando en una sola consulta por tabla
-   * los tipos y los tags de la página.
+   * los tipos, las categorías y los tags de la página.
    *
    * @param transactions transacciones a representar
    * @return listado de representaciones completas envuelto en Mono
@@ -229,11 +187,14 @@ public class TransactionQueryServiceImpl implements TransactionQueryService {
       return Mono.just(List.of());
     }
     Set<Long> transactionTypeIds = collectIds(transactions, Transaction::getTransactionTypeId);
+    Set<Long> categoryIds = collectIds(transactions, Transaction::getCategoryId);
     Set<Long> transactionIds = collectIds(transactions, Transaction::getId);
 
     return Mono.zip(
         transactionTypeRepository.findAllById(transactionTypeIds)
             .collectMap(TransactionType::getId),
+        categoryRepository.findAllById(categoryIds)
+            .collectMap(Category::getId),
         tagRepository.findNamesByTransactionIdIn(transactionIds)
             .collect(Collectors.groupingBy(TransactionTagName::transactionId,
                 Collectors.mapping(TransactionTagName::tagName, Collectors.toList()))))
@@ -241,7 +202,8 @@ public class TransactionQueryServiceImpl implements TransactionQueryService {
             .map(transaction -> transactionMapper.toResponse(
                 transaction,
                 references.getT1().get(transaction.getTransactionTypeId()),
-                sortedTags(references.getT2().get(transaction.getId()))))
+                references.getT2().get(transaction.getCategoryId()),
+                sortedTags(references.getT3().get(transaction.getId()))))
             .toList());
   }
 
@@ -298,12 +260,4 @@ public class TransactionQueryServiceImpl implements TransactionQueryService {
     return buildPage(List.of(), 0L, pageable);
   }
 
-  /**
-   * Rango de fechas efectivo de una búsqueda, con ambos extremos inclusivos.
-   *
-   * @param from fecha inicial, nula si no se filtra por fecha
-   * @param to   fecha final, nula si no se filtra por fecha
-   */
-  private record DateRange(LocalDateTime from, LocalDateTime to) {
-  }
 }
