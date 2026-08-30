@@ -1,0 +1,75 @@
+# Entorno local en contenedores.
+#
+# Sirve para probar la imagen tal y como se ejecutara en produccion --- mismo Dockerfile,
+# mismo perfil, mismas variables --- antes de desplegarla. No es un mecanismo de despliegue:
+# en produccion el PostgreSQL es administrado y la imagen la levanta la plataforma.
+#
+#     cp .env.example .env   # y rellenar los valores
+#     docker compose up --build
+
+services:
+  postgres:
+    # Misma version mayor que la usada en desarrollo, para que lo que se pruebe aqui se
+    # comporte igual que fuera.
+    image: postgres:16-alpine
+    container_name: finscope-postgres
+    environment:
+      POSTGRES_DB: ${DB_NAME:-finscope_db}
+      POSTGRES_USER: ${DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?define DB_PASSWORD en .env}
+    ports:
+      # Se publica para poder inspeccionar la base con un cliente del anfitrion. El backend
+      # no usa este puerto: le habla por la red interna.
+      - "${DB_EXPOSED_PORT:-5433}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # El backend arranca aplicando migraciones, de modo que no puede empezar hasta que la
+      # base acepte conexiones. Sin esta comprobacion el primer arranque falla por carrera.
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-postgres} -d ${DB_NAME:-finscope_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - finscope
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: finscope-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      # Dentro de la red de compose, localhost es el propio contenedor: la base se alcanza
+      # por el nombre del servicio.
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-finscope_db}
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:?define DB_PASSWORD en .env}
+      # La base local no habla TLS; un PostgreSQL administrado si lo exige.
+      DB_SSL_MODE: disable
+      JWT_SECRET: ${JWT_SECRET:?define JWT_SECRET en .env}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:4200}
+      SERVER_PORT: 8080
+      # No hay proxy inverso delante en local, asi que no hay cabeceras reenviadas en las
+      # que confiar.
+      FORWARD_HEADERS_STRATEGY: none
+    ports:
+      - "${API_EXPOSED_PORT:-9090}:8080"
+    networks:
+      - finscope
+    restart: unless-stopped
+
+volumes:
+  # `docker compose down` conserva los datos
+  # se pierden si se pide expresamente con `down -v`.
+  postgres_data:
+
+networks:
+  finscope:
+    driver: bridge

@@ -1,41 +1,70 @@
+# Configuracion comun a todos los entornos.
+#
+# Aqui solo vive lo que no cambia entre local y produccion y lo que no es secreto. Todo lo
+# que depende del entorno --- la base de datos, la clave de firma, los origenes permitidos ---
+# se declara en application-dev.yml y application-prod.yml, de modo que desplegar sea
+# cuestion de cambiar SPRING_PROFILES_ACTIVE y las variables, nunca de editar un archivo.
 spring:
   application:
     name: finscope-api
-  r2dbc:
-    url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT}/${DB_NAME}
-    username: ${DB_USERNAME}
-    password: ${DB_PASSWORD}
-    pool:
-      enabled: true
-      initial-size: ${DB_POOL_INITIAL_SIZE:5}
-      max-size: ${DB_POOL_MAX_SIZE:20}
-      max-acquire-time: ${DB_POOL_MAX_ACQUIRE_TIME:10s}
-      max-idle-time: ${DB_POOL_MAX_IDLE_TIME:30m}
-      max-life-time: ${DB_POOL_MAX_LIFE_TIME:2h}
+  profiles:
+    # Sin perfil activo se asume desarrollo: arrancar en local no deberia exigir recordar
+    # una variable, y produccion siempre fija SPRING_PROFILES_ACTIVE=prod de forma explicita.
+    default: dev
   codec:
     # Tope de lo que se acumula en memoria por peticion. Los cuerpos de esta API son
     # objetos pequenos, asi que cualquier cosa mayor no es un uso legitimo sino una forma
     # barata de agotar la memoria del servidor.
     max-in-memory-size: ${MAX_REQUEST_SIZE:256KB}
+  flyway:
+    # El esquema se aplica al arrancar para que un entorno limpio quede utilizable sin
+    # ningun paso manual. Flyway solo habla JDBC; la aplicacion sigue usando R2DBC.
+    enabled: ${FLYWAY_ENABLED:true}
+    locations: classpath:db/migration
+    # Las bases que ya existian se marcan en la version 1 en lugar de intentar recrearlas:
+    # la migracion inicial reproduce justo ese estado y volver a aplicarla fallaria.
+    baseline-on-migrate: true
+    baseline-version: 1
+  lifecycle:
+    # Margen que se da a las peticiones en curso para terminar cuando llega la senal de
+    # parada. Render y Docker esperan un rato antes de matar el proceso; este valor debe
+    # quedar por debajo de esa espera.
+    timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:20s}
 server:
-  port: ${SERVER_PORT:9090}
+  # El puerto lo decide la plataforma. Render inyecta PORT y no admite otro nombre, asi que
+  # se mira primero; SERVER_PORT queda para Docker y para el arranque local.
+  port: ${PORT:${SERVER_PORT:8080}}
   # TLS termina en el proxy inverso: sin esto la aplicacion veria todas las peticiones como
   # http y con la direccion del proxy, y ni HSTS ni el limite por origen funcionarian.
   forward-headers-strategy: ${FORWARD_HEADERS_STRATEGY:framework}
   max-http-request-header-size: ${MAX_REQUEST_HEADER_SIZE:16KB}
   shutdown: graceful
+  netty:
+    # Cierra las conexiones que se quedan abiertas sin enviar nada, que de otro modo
+    # ocuparian un hueco del servidor indefinidamente.
+    idle-timeout: ${SERVER_IDLE_TIMEOUT:60s}
+management:
+  endpoints:
+    access:
+      # Nada queda accesible salvo lo que se habilite expresamente: asi agregar una
+      # dependencia con endpoints propios no los publica sin querer.
+      default: none
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      access: read-only
+      probes:
+        enabled: true
 finscope:
   security:
     jwt:
-      secret: ${JWT_SECRET}
       issuer: ${JWT_ISSUER:finscope-api}
       audience: ${JWT_AUDIENCE:finscope-web}
       access-token-ttl: ${JWT_ACCESS_TOKEN_TTL:15m}
       refresh-token-ttl: ${JWT_REFRESH_TOKEN_TTL:30d}
     cors:
-      # En produccion debe apuntarse al dominio real de FinScope mediante la variable de
-      # entorno. El valor por defecto solo sirve al servidor de desarrollo de Angular.
-      allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200}
       max-age: ${CORS_MAX_AGE:1h}
     rate-limit:
       enabled: ${RATE_LIMIT_ENABLED:true}
@@ -52,8 +81,6 @@ finscope:
       max-lock: ${LOGIN_ATTEMPTS_MAX_LOCK:15m}
 logging:
   level:
-    root: ${LOG_LEVEL_ROOT:INFO}
-    com.sreyes.finscope: ${LOG_LEVEL_APP:INFO}
     # Estas categorias registran las sentencias y sus parametros enlazados, que en esta
     # aplicacion incluyen el hash de la contrasena y el del token de refresco. Se fijan a
     # INFO para que no basten un DEBUG global o un descuido para acabar volcandolos.

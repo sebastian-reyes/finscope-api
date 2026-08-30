@@ -1,0 +1,36 @@
+# Todo lo que no hace falta para compilar la aplicacion se queda fuera del contexto: el
+# build es mas rapido y, sobre todo, ningun secreto ni metadato local puede acabar dentro
+# de la imagen por descuido.
+
+# Control de versiones y metadatos del editor
+.git
+.gitattributes
+.gitignore
+.idea
+.vscode
+*.iml
+*.iws
+*.ipr
+
+# Resultado de compilaciones locales: la imagen compila de cero dentro del contenedor
+target/
+build/
+
+# Secretos y configuracion local
+.env
+.env.*
+!.env.example
+
+# Registros y temporales
+logs/
+*.log
+*.tmp
+
+# Infraestructura y documentacion, que no intervienen en el build
+Dockerfile
+.dockerignore
+docker-compose.yml
+docker-compose.*.yml
+HELP.md
+README.md
+docs/

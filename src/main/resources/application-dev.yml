@@ -1,0 +1,38 @@
+# Configuracion de desarrollo local.
+#
+# Los valores por defecto de este archivo existen para que clonar el repositorio y arrancar
+# funcione sin preparar nada. Son validos unicamente contra una base de datos local de
+# pruebas y no se heredan en produccion: application-prod.yml no define ningun defecto, de
+# modo que alli falta una variable y la aplicacion no arranca en lugar de usar estos.
+spring:
+  r2dbc:
+    url: ${DB_URL:r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:finscope_db}}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+    pool:
+      enabled: true
+      initial-size: ${DB_POOL_INITIAL_SIZE:2}
+      max-size: ${DB_POOL_MAX_SIZE:10}
+      max-acquire-time: ${DB_POOL_MAX_ACQUIRE_TIME:10s}
+      max-idle-time: ${DB_POOL_MAX_IDLE_TIME:30m}
+      max-life-time: ${DB_POOL_MAX_LIFE_TIME:2h}
+      validation-query: SELECT 1
+  flyway:
+    # Flyway necesita el mismo destino que R2DBC pero expresado en JDBC, que es el unico
+    # protocolo que entiende.
+    url: ${DB_JDBC_URL:jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:finscope_db}}
+    user: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+finscope:
+  security:
+    jwt:
+      # Clave de juguete, valida solo aqui: es publica y esta en el repositorio, asi que
+      # cualquiera puede firmar tokens con ella. En produccion la variable es obligatoria.
+      secret: ${JWT_SECRET:finscope-local-development-signing-key-do-not-use}
+    cors:
+      # El servidor de desarrollo de Angular.
+      allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200}
+logging:
+  level:
+    root: ${LOG_LEVEL_ROOT:INFO}
+    com.sreyes.finscope: ${LOG_LEVEL_APP:DEBUG}
