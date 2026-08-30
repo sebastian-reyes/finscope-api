@@ -49,9 +49,13 @@ public class SecurityConfig {
 
   /**
    * Rutas accesibles sin autenticación, necesarias para poder obtener credenciales.
+   * El estado de la aplicación se incluye porque lo consultan el contenedor y la
+   * plataforma, que no tienen credenciales; se publica sin desglose para que decir que
+   * está viva no sea también decir de qué está hecha.
    */
   private static final String[] PUBLIC_PATHS = {
-      "/auth/register", "/auth/login", "/auth/refresh", "/auth/logout"
+      "/auth/register", "/auth/login", "/auth/refresh", "/auth/logout",
+      "/actuator/health", "/actuator/health/**"
   };
 
   /**
