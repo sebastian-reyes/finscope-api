@@ -67,7 +67,10 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "409":
           $ref: "#/components/responses/Conflict"
-
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
   /auth/login:
     post:
       tags: [auth]
@@ -91,7 +94,10 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
-
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
   /auth/refresh:
     post:
       tags: [auth]
@@ -119,7 +125,10 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
-
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
   /auth/logout:
     post:
       tags: [auth]
@@ -137,7 +146,10 @@ paths:
           description: Sesion cerrada
         "400":
           $ref: "#/components/responses/BadRequest"
-
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
   /auth/me:
     get:
       tags: [auth]
@@ -152,6 +164,10 @@ paths:
                 $ref: "#/components/schemas/UserResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
     patch:
       tags: [auth]
       summary: Actualiza los datos del usuario autenticado
@@ -180,7 +196,12 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
-
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
   /transaction-types:
     get:
       tags: [transaction-types]
@@ -198,7 +219,12 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/TransactionTypeResponse"
-
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
   /transaction-types/{id}:
     parameters:
       - $ref: "#/components/parameters/PathId"
@@ -215,7 +241,12 @@ paths:
                 $ref: "#/components/schemas/TransactionTypeResponse"
         "404":
           $ref: "#/components/responses/NotFound"
-
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
   /categories:
     get:
       tags: [categories]
@@ -235,6 +266,12 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/CategoryResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
     post:
       tags: [categories]
       summary: Crea una categoria
@@ -259,7 +296,14 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "409":
           $ref: "#/components/responses/Conflict"
-
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
   /categories/{id}:
     parameters:
       - $ref: "#/components/parameters/PathId"
@@ -293,6 +337,14 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
     delete:
       tags: [categories]
       summary: Elimina una categoria
@@ -309,7 +361,12 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
-
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
   /tags:
     get:
       tags: [tags]
@@ -330,6 +387,12 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/TagResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
     post:
       tags: [tags]
       summary: Crea un tag en el catalogo del usuario
@@ -354,7 +417,14 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "409":
           $ref: "#/components/responses/Conflict"
-
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
   /tags/{id}:
     parameters:
       - $ref: "#/components/parameters/PathId"
@@ -387,6 +457,14 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
     delete:
       tags: [tags]
       summary: Elimina un tag
@@ -399,7 +477,12 @@ paths:
           description: Tag eliminado
         "404":
           $ref: "#/components/responses/NotFound"
-
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
   /transactions:
     get:
       tags: [transactions]
@@ -452,6 +535,12 @@ paths:
                 $ref: "#/components/schemas/TransactionPageResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
     post:
       tags: [transactions]
       summary: Crea una transaccion
@@ -473,7 +562,14 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "404":
           $ref: "#/components/responses/NotFound"
-
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
   /transactions/summary:
     get:
       tags: [summary]
@@ -505,7 +601,12 @@ paths:
                 $ref: "#/components/schemas/TransactionSummaryResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
-
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
   /transactions/summary/series:
     get:
       tags: [summary]
@@ -542,7 +643,12 @@ paths:
                 $ref: "#/components/schemas/SummarySeriesResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
-
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
   /transactions/{id}:
     parameters:
       - $ref: "#/components/parameters/PathId"
@@ -559,6 +665,12 @@ paths:
                 $ref: "#/components/schemas/TransactionResponse"
         "404":
           $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
     patch:
       tags: [transactions]
       summary: Actualiza parcialmente una transaccion
@@ -584,6 +696,14 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "404":
           $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
     delete:
       tags: [transactions]
       summary: Elimina una transaccion
@@ -596,7 +716,12 @@ paths:
           description: Transaccion eliminada
         "404":
           $ref: "#/components/responses/NotFound"
-
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
 components:
   securitySchemes:
     bearerAuth:
@@ -700,6 +825,32 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
+    Forbidden:
+      description: El token es valido pero no autoriza esta operacion
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    PayloadTooLarge:
+      description: El cuerpo de la peticion supera el tamano admitido
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    TooManyRequests:
+      description: |
+        Se ha superado el limite de peticiones o se han acumulado demasiados intentos de
+        acceso fallidos. La cabecera Retry-After indica cuando puede reintentarse.
+      headers:
+        Retry-After:
+          description: Segundos que deben esperarse antes de reintentar
+          schema:
+            type: integer
+            format: int32
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
 
   schemas:
     RegisterRequest:
@@ -729,9 +880,12 @@ components:
         email:
           type: string
           format: email
+          maxLength: 255
         password:
           type: string
           format: password
+          minLength: 1
+          maxLength: 72
 
     RefreshTokenRequest:
       type: object
@@ -739,6 +893,8 @@ components:
       properties:
         refreshToken:
           type: string
+          minLength: 1
+          maxLength: 512
 
     AuthResponse:
       type: object
@@ -874,6 +1030,7 @@ components:
           type: number
           minimum: 0
           exclusiveMinimum: true
+          maximum: 999999999999.99
         description:
           type: string
           maxLength: 255
@@ -898,6 +1055,7 @@ components:
             Una cadena vacia no llega a descartarse: la rechaza la longitud minima.
             Si el usuario ya tiene el tag escrito de otra forma se reutiliza el existente,
             asi que `casa` sobre un `Casa` previo devuelve `Casa`.
+          maxItems: 20
           items:
             type: string
             minLength: 1
@@ -910,6 +1068,7 @@ components:
           type: number
           minimum: 0
           exclusiveMinimum: true
+          maximum: 999999999999.99
         description:
           type: string
           maxLength: 255
@@ -930,6 +1089,7 @@ components:
           description: |
             Si esta presente reemplaza por completo los tags de la transaccion.
             Una lista vacia deja la transaccion sin tags.
+          maxItems: 20
           items:
             type: string
             minLength: 1

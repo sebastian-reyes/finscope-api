@@ -18,6 +18,7 @@ import com.sreyes.finscope.api.model.UpdateUserRequest;
 import com.sreyes.finscope.exception.custom.EmailAlreadyRegisteredException;
 import com.sreyes.finscope.exception.custom.InvalidCredentialsException;
 import com.sreyes.finscope.exception.custom.InvalidRefreshTokenException;
+import com.sreyes.finscope.exception.custom.TooManyAttemptsException;
 import com.sreyes.finscope.model.entity.RefreshToken;
 import com.sreyes.finscope.model.entity.User;
 import com.sreyes.finscope.model.entity.UserIdentity;
@@ -26,6 +27,8 @@ import com.sreyes.finscope.repository.UserIdentityRepository;
 import com.sreyes.finscope.repository.UserRepository;
 import com.sreyes.finscope.security.JwtProperties;
 import com.sreyes.finscope.security.JwtService;
+import com.sreyes.finscope.security.LoginAttemptProperties;
+import com.sreyes.finscope.security.LoginAttemptService;
 import com.sreyes.finscope.service.CategoryService;
 import java.time.Clock;
 import java.time.Duration;
@@ -74,15 +77,20 @@ class AuthServiceImplTest {
 
   private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
+  private LoginAttemptService loginAttemptService;
+
   private AuthServiceImpl authService;
 
   @BeforeEach
   void setUp() {
     JwtProperties jwtProperties = new JwtProperties("clave-de-firma-de-al-menos-32-caracteres",
-        "finscope-api", Duration.ofMinutes(15), Duration.ofDays(30));
+        "finscope-api", "finscope-web", Duration.ofMinutes(15), Duration.ofDays(30));
+    loginAttemptService = new LoginAttemptService(
+        new LoginAttemptProperties(true, 5, Duration.ofSeconds(30), Duration.ofMinutes(15)));
     authService = new AuthServiceImpl(userRepository, userIdentityRepository, categoryService,
-        refreshTokenRepository, jwtService, jwtProperties, passwordEncoder,
+        refreshTokenRepository, jwtService, jwtProperties, passwordEncoder, loginAttemptService,
         Clock.systemDefaultZone());
+    authService.initDummyPasswordHash();
     // Toda cuenta nace con su catálogo: sin él no podría registrar ni un movimiento.
     when(categoryService.seedDefaults(anyLong())).thenReturn(Mono.empty());
     when(jwtService.issueAccessToken(any(User.class))).thenReturn("access-token");
@@ -185,6 +193,44 @@ class AuthServiceImplTest {
   }
 
   @Test
+  @DisplayName("Bloquea temporalmente el acceso tras acumular intentos fallidos")
+  void locksLoginAfterRepeatedFailures() {
+    when(userRepository.findByEmailIgnoreCase(EMAIL))
+        .thenReturn(Mono.just(existingUser(passwordEncoder.encode(PASSWORD))));
+
+    for (int attempt = 0; attempt < 5; attempt++) {
+      StepVerifier.create(authService.login(loginRequest("otra-contrasena")))
+          .expectError(InvalidCredentialsException.class)
+          .verify();
+    }
+
+    // Ya bloqueada, ni siquiera la contraseña correcta abre: la espera es lo que encarece
+    // seguir probando.
+    StepVerifier.create(authService.login(loginRequest(PASSWORD)))
+        .expectError(TooManyAttemptsException.class)
+        .verify();
+  }
+
+  @Test
+  @DisplayName("Un acceso correcto borra los intentos fallidos previos")
+  void successfulLoginClearsFailedAttempts() {
+    when(userRepository.findByEmailIgnoreCase(EMAIL))
+        .thenReturn(Mono.just(existingUser(passwordEncoder.encode(PASSWORD))));
+
+    for (int attempt = 0; attempt < 4; attempt++) {
+      StepVerifier.create(authService.login(loginRequest("otra-contrasena")))
+          .expectError(InvalidCredentialsException.class)
+          .verify();
+    }
+
+    StepVerifier.create(authService.login(loginRequest(PASSWORD)))
+        .assertNext(auth -> assertNotNull(auth.getAccessToken()))
+        .verifyComplete();
+
+    StepVerifier.create(loginAttemptService.requireNotLocked(EMAIL)).verifyComplete();
+  }
+
+  @Test
   @DisplayName("Rechaza el acceso de una cuenta sembrada que aún no fue reclamada")
   void rejectsLoginOnSeededAccount() {
     when(userRepository.findByEmailIgnoreCase(EMAIL)).thenReturn(Mono.just(existingUser(null)));
@@ -210,14 +256,19 @@ class AuthServiceImplTest {
   }
 
   @Test
-  @DisplayName("Rechaza un token de refresco ya consumido")
+  @DisplayName("Rechaza un token de refresco ya consumido y revoca los del usuario")
   void rejectsAlreadyUsedRefreshToken() {
     when(refreshTokenRepository.findByTokenHash(anyString()))
         .thenReturn(Mono.just(refreshToken(true, LocalDateTime.now().plusDays(1))));
+    when(refreshTokenRepository.revokeAllByUserId(USER_ID)).thenReturn(Mono.just(2L));
 
     StepVerifier.create(authService.refresh("un-token-de-refresco"))
         .expectError(InvalidRefreshTokenException.class)
         .verify();
+
+    // Ver dos veces el mismo token significa que hay una copia suelta: se corta el acceso
+    // a todas, porque no puede saberse cual de las dos partes es la legitima.
+    verify(refreshTokenRepository).revokeAllByUserId(USER_ID);
   }
 
   @Test

@@ -34,9 +34,19 @@ public final class Constants {
   public static final String AUTHENTICATION_REQUIRED = "Authentication is required to access this resource";
   public static final String ACCESS_DENIED = "You do not have permission to access this resource";
   public static final String INVALID_CREDENTIALS = "Invalid email or password";
-  public static final String EMAIL_ALREADY_REGISTERED = "An account already exists for {}";
+  public static final String EMAIL_ALREADY_REGISTERED = "An account already exists for this email";
   public static final String INVALID_REFRESH_TOKEN =
       "The refresh token is invalid, expired or has already been used";
+
+  public static final String TOO_MANY_ATTEMPTS =
+      "Too many failed attempts. Try again later";
+  public static final String RATE_LIMIT_EXCEEDED =
+      "Too many requests. Try again later";
+
+  public static final String MALFORMED_REQUEST =
+      "The request could not be processed. Check the request body and parameters";
+  public static final String PAYLOAD_TOO_LARGE = "The request body is too large";
+  public static final String PAYLOAD_TOO_LARGE_CODE = "CONTENT_TOO_LARGE";
 
   public static final String VALIDATION_FAILED = "VALIDATION_ERROR";
   public static final String INVALID_REQUEST = "INVALID_REQUEST";

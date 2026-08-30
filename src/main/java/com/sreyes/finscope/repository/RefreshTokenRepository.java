@@ -1,6 +1,8 @@
 package com.sreyes.finscope.repository;
 
 import com.sreyes.finscope.model.entity.RefreshToken;
+import org.springframework.data.r2dbc.repository.Modifying;
+import org.springframework.data.r2dbc.repository.Query;
 import org.springframework.data.r2dbc.repository.R2dbcRepository;
 import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Mono;
@@ -20,4 +22,17 @@ public interface RefreshTokenRepository extends R2dbcRepository<RefreshToken, Lo
    * @return token encontrado envuelto en Mono
    */
   Mono<RefreshToken> findByTokenHash(String tokenHash);
+
+  /**
+   * Revoca de una vez todos los tokens vigentes de un usuario.
+   * Se usa cuando se presenta un token ya consumido: como cada renovación entrega uno
+   * nuevo, ver dos veces el mismo significa que hay una copia en circulación, y sin saber
+   * cuál de las dos partes es la legítima lo único seguro es obligar a entrar de nuevo.
+   *
+   * @param userId identificador del usuario propietario
+   * @return número de tokens revocados
+   */
+  @Modifying
+  @Query("UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = :userId AND NOT revoked")
+  Mono<Long> revokeAllByUserId(Long userId);
 }

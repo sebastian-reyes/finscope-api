@@ -3,6 +3,7 @@ package com.sreyes.finscope.security;
 import com.sreyes.finscope.model.entity.User;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
@@ -33,6 +34,7 @@ public class JwtService {
     Instant now = Instant.now();
     JwtClaimsSet claims = JwtClaimsSet.builder()
         .issuer(jwtProperties.issuer())
+        .audience(List.of(jwtProperties.audience()))
         .issuedAt(now)
         .expiresAt(now.plus(jwtProperties.accessTokenTtl()))
         .subject(String.valueOf(user.getId()))

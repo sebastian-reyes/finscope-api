@@ -16,9 +16,11 @@ import com.sreyes.finscope.repository.UserIdentityRepository;
 import com.sreyes.finscope.repository.UserRepository;
 import com.sreyes.finscope.security.JwtProperties;
 import com.sreyes.finscope.security.JwtService;
+import com.sreyes.finscope.security.LoginAttemptService;
 import com.sreyes.finscope.service.AuthService;
 import com.sreyes.finscope.service.CategoryService;
 import com.sreyes.finscope.util.constants.Constants;
+import jakarta.annotation.PostConstruct;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -27,10 +29,13 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Implementación del servicio {@link AuthService}.
@@ -38,12 +43,18 @@ import reactor.core.publisher.Mono;
  * solo se guarda su hash. Al renovar, el token consumido se revoca y se emite uno nuevo,
  * de modo que un token filtrado deja de servir en cuanto el usuario legítimo renueva.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuthServiceImpl implements AuthService {
 
   private static final String TOKEN_TYPE = "Bearer";
   private static final int REFRESH_TOKEN_BYTES = 32;
+
+  /**
+   * Longitud del valor con el que se genera el hash de comparación de descarte.
+   */
+  private static final int DUMMY_SECRET_BYTES = 32;
 
   private final UserRepository userRepository;
   private final UserIdentityRepository userIdentityRepository;
@@ -52,8 +63,32 @@ public class AuthServiceImpl implements AuthService {
   private final JwtService jwtService;
   private final JwtProperties jwtProperties;
   private final PasswordEncoder passwordEncoder;
+  private final LoginAttemptService loginAttemptService;
   private final Clock clock;
   private final SecureRandom secureRandom = new SecureRandom();
+
+  /**
+   * Hash de una contraseña aleatoria que nadie conoce, contra el que se compara cuando el
+   * correo no corresponde a ninguna cuenta utilizable.
+   * Sin él, un correo desconocido se resolvería sin llegar a calcular ningún hash y
+   * respondería mucho antes que uno registrado, lo que permitiría distinguirlos midiendo el
+   * tiempo por mucho que el mensaje de error sea el mismo.
+   */
+  private String dummyPasswordHash;
+
+  /**
+   * Calcula el hash de descarte una sola vez, al levantar el servicio.
+   * Se hace aquí y no al declarar el campo porque necesita el codificador ya inyectado, y
+   * no en cada intento porque el coste de un hash es justo lo que se quiere evitar pagar de
+   * más en las peticiones.
+   */
+  @PostConstruct
+  void initDummyPasswordHash() {
+    byte[] filler = new byte[DUMMY_SECRET_BYTES];
+    secureRandom.nextBytes(filler);
+    dummyPasswordHash = passwordEncoder.encode(
+        Base64.getUrlEncoder().withoutPadding().encodeToString(filler));
+  }
 
   @Override
   public Mono<AuthResponse> register(RegisterRequest request) {
@@ -66,19 +101,28 @@ public class AuthServiceImpl implements AuthService {
 
   @Override
   public Mono<AuthResponse> login(LoginRequest request) {
-    return userRepository.findByEmailIgnoreCase(request.getEmail().trim())
-        .filter(user -> user.isActive() && user.getPasswordHash() != null
-            && passwordEncoder.matches(request.getPassword(), user.getPasswordHash()))
-        .switchIfEmpty(Mono.error(
-            new InvalidCredentialsException(Constants.INVALID_CREDENTIALS)))
-        .flatMap(this::issueCredentials);
+    String email = request.getEmail().trim();
+    return loginAttemptService.requireNotLocked(email)
+        .then(Mono.defer(() -> userRepository.findByEmailIgnoreCase(email)
+            .map(Optional::of)
+            .defaultIfEmpty(Optional.empty())))
+        .flatMap(found -> verifyPassword(found, request.getPassword()))
+        .doOnNext(user -> {
+          loginAttemptService.recordSuccess(email);
+          log.info("Login succeeded for user {}", user.getId());
+        })
+        .flatMap(this::issueCredentials)
+        .onErrorResume(InvalidCredentialsException.class, ex -> {
+          loginAttemptService.recordFailure(email);
+          log.warn("Login failed: invalid credentials");
+          return Mono.error(ex);
+        });
   }
 
   @Override
   public Mono<AuthResponse> refresh(String refreshToken) {
     return refreshTokenRepository.findByTokenHash(hash(refreshToken))
-        .filter(token -> !token.isRevoked()
-            && token.getExpiresAt().isAfter(LocalDateTime.now(clock)))
+        .flatMap(this::requireUsableRefreshToken)
         .switchIfEmpty(Mono.error(
             new InvalidRefreshTokenException(Constants.INVALID_REFRESH_TOKEN)))
         .flatMap(this::revoke)
@@ -121,6 +165,63 @@ public class AuthServiceImpl implements AuthService {
   }
 
   /**
+   * Comprueba la contraseña recibida gastando el mismo tiempo exista o no la cuenta.
+   * La comparación se aparta del bucle de eventos porque bcrypt está pensado para ser
+   * lento: dejarla ahí bloquearía el hilo que atiende al resto de peticiones y convertiría
+   * un aluvión de intentos de acceso en una caída del servicio entero.
+   *
+   * @param found    cuenta encontrada para el correo, si la hay
+   * @param password contraseña recibida en la petición
+   * @return la cuenta autenticada, o un error de credenciales inválidas
+   */
+  private Mono<User> verifyPassword(Optional<User> found, String password) {
+    return Mono.fromCallable(() -> {
+      User user = found.orElse(null);
+      boolean usable = user != null && user.isActive() && user.getPasswordHash() != null;
+      String hash = usable ? user.getPasswordHash() : dummyPasswordHash;
+      if (!passwordEncoder.matches(password, hash) || !usable) {
+        throw new InvalidCredentialsException(Constants.INVALID_CREDENTIALS);
+      }
+      return user;
+    }).subscribeOn(Schedulers.boundedElastic());
+  }
+
+  /**
+   * Calcula el hash de una contraseña fuera del bucle de eventos.
+   *
+   * @param password contraseña en claro
+   * @return el hash con el que se almacena
+   */
+  private Mono<String> encodePassword(String password) {
+    return Mono.fromCallable(() -> passwordEncoder.encode(password))
+        .subscribeOn(Schedulers.boundedElastic());
+  }
+
+  /**
+   * Comprueba que un token de refresco sigue sirviendo.
+   * Presentar uno ya consumido no es un descuido: cada renovación entrega uno nuevo, así
+   * que verlo por segunda vez indica que hay una copia en circulación. Como no puede
+   * saberse cuál de las dos partes es la legítima, se revocan todos los del usuario y ambas
+   * tienen que volver a identificarse.
+   *
+   * @param token token localizado por su hash
+   * @return el token si es utilizable, o un error si no lo es
+   */
+  private Mono<RefreshToken> requireUsableRefreshToken(RefreshToken token) {
+    if (token.isRevoked()) {
+      log.warn("Refresh token reuse detected for user {}; revoking active tokens",
+          token.getUserId());
+      return refreshTokenRepository.revokeAllByUserId(token.getUserId())
+          .then(Mono.error(
+              new InvalidRefreshTokenException(Constants.INVALID_REFRESH_TOKEN)));
+    }
+    if (!token.getExpiresAt().isAfter(LocalDateTime.now(clock))) {
+      return Mono.empty();
+    }
+    return Mono.just(token);
+  }
+
+  /**
    * Da de alta un usuario nuevo junto con su identidad local.
    *
    * @param email   correo ya normalizado
@@ -128,13 +229,17 @@ public class AuthServiceImpl implements AuthService {
    * @return el usuario recién creado
    */
   private Mono<User> createUser(String email, RegisterRequest request) {
-    User user = new User();
-    user.setEmail(email);
-    user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
-    user.setDisplayName(normaliseDisplayName(request.getDisplayName()));
-    user.setActive(true);
-    user.setCreatedAt(LocalDateTime.now(clock));
-    return userRepository.save(user)
+    return encodePassword(request.getPassword())
+        .map(passwordHash -> {
+          User user = new User();
+          user.setEmail(email);
+          user.setPasswordHash(passwordHash);
+          user.setDisplayName(normaliseDisplayName(request.getDisplayName()));
+          user.setActive(true);
+          user.setCreatedAt(LocalDateTime.now(clock));
+          return user;
+        })
+        .flatMap(userRepository::save)
         .flatMap(saved -> saveLocalIdentity(saved).thenReturn(saved))
         // La categoría es obligatoria en cada movimiento, así que una cuenta sin catálogo
         // no podría registrar ninguno: se siembra aquí, antes de devolver las credenciales.
@@ -153,14 +258,18 @@ public class AuthServiceImpl implements AuthService {
    */
   private Mono<User> claimSeededAccount(User user, RegisterRequest request) {
     if (user.getPasswordHash() != null) {
-      return Mono.error(new EmailAlreadyRegisteredException(
-          Constants.EMAIL_ALREADY_REGISTERED.replace("{}", user.getEmail())));
+      return Mono.error(
+          new EmailAlreadyRegisteredException(Constants.EMAIL_ALREADY_REGISTERED));
     }
-    user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
-    if (request.getDisplayName() != null) {
-      user.setDisplayName(request.getDisplayName());
-    }
-    return userRepository.save(user);
+    return encodePassword(request.getPassword())
+        .map(passwordHash -> {
+          user.setPasswordHash(passwordHash);
+          if (request.getDisplayName() != null) {
+            user.setDisplayName(normaliseDisplayName(request.getDisplayName()));
+          }
+          return user;
+        })
+        .flatMap(userRepository::save);
   }
 
   /**

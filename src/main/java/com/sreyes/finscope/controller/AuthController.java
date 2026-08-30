@@ -10,6 +10,7 @@ import com.sreyes.finscope.api.model.UserResponse;
 import com.sreyes.finscope.security.AuthenticatedUser;
 import com.sreyes.finscope.service.AuthService;
 import lombok.RequiredArgsConstructor;
+import org.jspecify.annotations.NonNull;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
@@ -30,7 +31,7 @@ public class AuthController implements AuthApi {
   private final AuthenticatedUser authenticatedUser;
 
   @Override
-  public Mono<ResponseEntity<AuthResponse>> register(Mono<RegisterRequest> registerRequest,
+  public Mono<ResponseEntity<AuthResponse>> register(@NonNull Mono<RegisterRequest> registerRequest,
                                                      ServerWebExchange exchange) {
     return registerRequest
         .flatMap(authService::register)

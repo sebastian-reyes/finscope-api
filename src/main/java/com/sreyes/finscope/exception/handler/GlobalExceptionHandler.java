@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.buffer.DataBufferLimitException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -80,18 +81,41 @@ public class GlobalExceptionHandler {
   /**
    * Maneja las peticiones cuyo cuerpo o parámetros no pueden interpretarse, por ejemplo
    * cuando falta un parámetro obligatorio o un valor tiene un tipo incorrecto.
+   * El motivo original se registra pero no se devuelve: lo redacta el deserializador y
+   * suele nombrar clases y campos internos, que describen la implementación y no lo que el
+   * cliente ha hecho mal. Los errores que sí puede corregir —campos fuera de rango, formatos
+   * inválidos— llegan por la validación y sí detallan el campo.
    *
    * @param ex la excepción lanzada.
    * @return una respuesta de error con detalles del incidente.
    */
   @ExceptionHandler(ServerWebInputException.class)
   public ResponseEntity<ErrorResponse> handleServerWebInputException(ServerWebInputException ex) {
-    return buildResponse(HttpStatus.BAD_REQUEST, Constants.INVALID_REQUEST, ex.getReason());
+    if (isPayloadTooLarge(ex)) {
+      return handlePayloadTooLarge();
+    }
+    log.debug("Rejected malformed request: {}", ex.getReason());
+    return buildResponse(HttpStatus.BAD_REQUEST, Constants.INVALID_REQUEST,
+        Constants.MALFORMED_REQUEST);
+  }
+
+  /**
+   * Maneja los cuerpos que superan el tamaño admitido.
+   *
+   * @param ex la excepción lanzada.
+   * @return una respuesta de error indicando que la petición es demasiado grande.
+   */
+  @ExceptionHandler(DataBufferLimitException.class)
+  public ResponseEntity<ErrorResponse> handleDataBufferLimitException(DataBufferLimitException ex) {
+    log.warn("Rejected oversized request body");
+    return handlePayloadTooLarge();
   }
 
   /**
    * Maneja las excepciones que ya definen un estado HTTP propio, como el acceso a una ruta
    * inexistente.
+   * Se responde con la descripción estándar del estado en lugar de con el motivo que trae
+   * la excepción, que puede incluir la ruta o el recurso solicitado.
    *
    * @param ex la excepción lanzada.
    * @return una respuesta de error con el estado indicado por la excepción.
@@ -99,7 +123,8 @@ public class GlobalExceptionHandler {
   @ExceptionHandler(ResponseStatusException.class)
   public ResponseEntity<ErrorResponse> handleResponseStatusException(ResponseStatusException ex) {
     HttpStatus status = HttpStatus.valueOf(ex.getStatusCode().value());
-    return buildResponse(status, status.name(), ex.getReason());
+    log.debug("Request rejected with status {}: {}", status.value(), ex.getReason());
+    return buildResponse(status, status.name(), status.getReasonPhrase());
   }
 
   /**
@@ -113,6 +138,34 @@ public class GlobalExceptionHandler {
     log.error("Unexpected error while handling the request", ex);
     return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, Constants.INTERNAL_ERROR,
         Constants.UNEXPECTED_ERROR);
+  }
+
+  /**
+   * Compone la respuesta de una petición cuyo cuerpo excede el tamaño admitido.
+   *
+   * @return la respuesta de error correspondiente.
+   */
+  private ResponseEntity<ErrorResponse> handlePayloadTooLarge() {
+    return buildResponse(HttpStatus.CONTENT_TOO_LARGE, Constants.PAYLOAD_TOO_LARGE_CODE,
+        Constants.PAYLOAD_TOO_LARGE);
+  }
+
+  /**
+   * Indica si el fallo de entrada se debe a que el cuerpo supera el tamaño admitido.
+   *
+   * @param ex la excepción lanzada.
+   * @return {@code true} si la causa es el límite de tamaño.
+   */
+  private boolean isPayloadTooLarge(Throwable ex) {
+    for (Throwable cause = ex; cause != null; cause = cause.getCause()) {
+      if (cause instanceof DataBufferLimitException) {
+        return true;
+      }
+      if (cause.getCause() == cause) {
+        return false;
+      }
+    }
+    return false;
   }
 
   /**
