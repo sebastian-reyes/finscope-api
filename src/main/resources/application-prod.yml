@@ -45,3 +45,10 @@ logging:
   level:
     root: ${LOG_LEVEL_ROOT:INFO}
     com.sreyes.finscope: ${LOG_LEVEL_APP:INFO}
+    # El nivel del driver no se deja al entorno. Estas dos categorias vuelcan la sentencia y
+    # los parametros enlazados --- entre ellos el hash de la contrasena y el del token de
+    # refresco --- en cuanto bajan a DEBUG, asi que en produccion quedan fijadas por encima
+    # de ese umbral y subir LOG_LEVEL_ROOT para diagnosticar otra cosa no puede destaparlas.
+    io.r2dbc.postgresql.QUERY: WARN
+    io.r2dbc.postgresql.PARAM: WARN
+    org.springframework.r2dbc: INFO

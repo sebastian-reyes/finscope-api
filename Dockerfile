@@ -12,11 +12,11 @@ WORKDIR /build
 
 # Las dependencias cambian mucho menos que el codigo, asi que se resuelven en su propia
 # capa: mientras el pom no se toque, reconstruir no vuelve a descargarlas. Si la resolucion
-# previa se queda corta no es un fallo del build, porque el empaquetado posterior baja lo
-# que falte; de ahi que no se aborte aqui.
+# falla, el build se detiene aqui: silenciar el error solo lo aplaza hasta el empaquetado,
+# donde aparece mezclado con el resto de la compilacion y cuesta mucho mas de leer.
 COPY .mvn/ .mvn/
 COPY mvnw pom.xml ./
-RUN chmod +x mvnw && ./mvnw -B -q dependency:go-offline || true
+RUN chmod +x mvnw && ./mvnw -B -q dependency:go-offline
 
 COPY src/ src/
 RUN ./mvnw -B -q clean package -DskipTests

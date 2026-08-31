@@ -27,7 +27,7 @@
         <url/>
     </scm>
     <properties>
-        <java.version>21</java.version>
+        <java.version>25</java.version>
         <org.mapstruct.version>1.6.3</org.mapstruct.version>
         <openapi-generator.version>7.24.0</openapi-generator.version>
         <openapi.spec>${project.basedir}/src/main/resources/openapi/finscope-api.yaml</openapi.spec>
