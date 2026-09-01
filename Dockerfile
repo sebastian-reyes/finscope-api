@@ -39,6 +39,24 @@ ARG JVM_OPTS="-XX:MaxRAMPercentage=50 \
 -XX:+ExitOnOutOfMemoryError \
 --enable-native-access=ALL-UNNAMED"
 
+# Memoria del contenedor de produccion, en bytes. No se usa al ejecutar --- ahi el limite lo
+# pone la plataforma y la maquina virtual lo lee del cgroup --- sino al entrenar la cache, y
+# resuelve un problema que no se ve venir.
+#
+# La maquina de build es mucho mas grande que el contenedor. Con MaxRAMPercentage=50 sobre un
+# host de 64 GB el monton sale de 32 GB, y a partir de ese umbral la maquina virtual apaga los
+# punteros comprimidos; el contenedor de 512 MB los tiene encendidos. La cache guarda ese
+# estado y lo exige al arrancar, asi que se descarta entera con este mensaje:
+#
+#     The saved state of UseCompressedOops and UseCompressedClassPointers is
+#     different from runtime, CDS will be disabled.
+#
+# Fijar aqui la memoria que la maquina virtual cree tener hace que el entrenamiento derive el
+# mismo monton que produccion y, con el, el mismo estado de punteros. Lo que importa no es que
+# el numero coincida al byte con el plan, sino que quede muy por debajo de los 32 GB; si algun
+# dia el plan crece, el porcentaje de arriba se adapta solo y la cache sigue siendo valida.
+ARG TARGET_RAM_BYTES=536870912
+
 # ---------------------------------------------------------------------------
 # Etapa 1: compilacion
 # ---------------------------------------------------------------------------
@@ -81,6 +99,7 @@ RUN cp target/*.jar /build/app.jar
 FROM eclipse-temurin:25-jre-alpine AS aot
 
 ARG JVM_OPTS
+ARG TARGET_RAM_BYTES
 
 # El directorio de trabajo es parte del contrato. La cache guarda las rutas del classpath tal
 # como las vio al grabarse, relativas al JAR: mover el arbol completo a otro sitio no la
@@ -104,19 +123,27 @@ RUN java -Djarmode=tools -jar /tmp/app.jar extract --destination /app && rm /tmp
 # "spring.context.exit=onRefresh" corta el proceso justo cuando el contexto termina de
 # levantar, sin llegar a atender peticiones: es todo lo que hace falta observar.
 #
+# Las dos invocaciones llevan MaxRAM para que la maquina virtual dimensione como si estuviera
+# ya en el contenedor de produccion. Sin eso la cache se graba con la ergonomia del host de
+# build y el arranque real la rechaza.
+#
 # La segunda invocacion es la comprobacion. En el arranque real un desajuste de la cache solo
 # imprime un error y sigue sin ella, asi que una cache inservible pasaria inadvertida y el
 # ahorro se perderia en silencio; "AOTMode=on" convierte ese mismo desajuste en un fallo, y
 # con "set -e" el build se detiene aqui en lugar de publicar una imagen que finge estar
-# optimizada.
+# optimizada. Que lleve el mismo MaxRAM es lo que le da sentido: comprobar la cache con la
+# ergonomia del host, y no con la del destino, es comprobar un escenario que nunca ocurre ---
+# fue asi como una cache inservible llego a produccion y el build no dijo nada.
 RUN set -eu; \
     export SPRING_PROFILES_ACTIVE=prod PORT=0 FLYWAY_ENABLED=false DB_POOL_INITIAL_SIZE=0; \
     export DB_URL="r2dbc:postgresql://entrenamiento:5432/finscope"; \
     export DB_USERNAME=entrenamiento DB_PASSWORD=entrenamiento; \
     export JWT_SECRET="valor-falso-solo-para-entrenar-la-cache-aot"; \
     export CORS_ALLOWED_ORIGINS="https://entrenamiento.invalid"; \
-    java ${JVM_OPTS} -XX:AOTCacheOutput=app.aot -Dspring.context.exit=onRefresh -jar app.jar; \
-    java ${JVM_OPTS} -XX:AOTMode=on -XX:AOTCache=app.aot -Dspring.context.exit=onRefresh -jar app.jar
+    java -XX:MaxRAM=${TARGET_RAM_BYTES} ${JVM_OPTS} \
+      -XX:AOTCacheOutput=app.aot -Dspring.context.exit=onRefresh -jar app.jar; \
+    java -XX:MaxRAM=${TARGET_RAM_BYTES} ${JVM_OPTS} \
+      -XX:AOTMode=on -XX:AOTCache=app.aot -Dspring.context.exit=onRefresh -jar app.jar
 
 # ---------------------------------------------------------------------------
 # Etapa 3: ejecucion
