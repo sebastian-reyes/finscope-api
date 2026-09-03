@@ -21,6 +21,12 @@ public final class Constants {
       "The fallback category cannot be deleted: it receives the transactions of the categories "
           + "you remove";
 
+  public static final String BUDGET_NOT_FOUND = "Budget not found with id: ";
+  public static final String BUDGET_ALREADY_SET =
+      "Category {} already has a budget for that month";
+  public static final String BUDGET_CATEGORY_NOT_APPLICABLE =
+      "Category {} does not take expenses, so there is nothing to budget against";
+
   public static final String INVALID_MONTH = "Invalid month. Month must be between 1 and 12.";
   public static final String INVALID_DATE_RANGE = "Invalid date range. dateFrom must be before dateTo.";
   public static final String CONFLICTING_DATE_FILTERS =

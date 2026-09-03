@@ -17,10 +17,15 @@ info:
     un total. Ambos son catalogos del usuario, editables y compartidos entre sus
     transacciones.
 
+    El presupuesto es la unica pieza que mira hacia delante: fija cuanto se piensa
+    gastar en una categoria durante un mes natural y se compara con lo que de verdad
+    se gasto en ella. Vive aparte de las transacciones porque es un plan y no un
+    hecho: borrar un movimiento no borra la intencion de gastar.
+
     Todos los recursos financieros pertenecen al usuario autenticado y estan aislados
     entre usuarios. Salvo los endpoints de autenticacion, todas las operaciones exigen
     un token de acceso.
-  version: 6.1.0
+  version: 6.2.0
 servers:
   - url: /
     description: Servidor local
@@ -37,6 +42,8 @@ tags:
     description: Gestion del catalogo de categorias del usuario
   - name: tags
     description: Gestion del catalogo de tags del usuario
+  - name: budgets
+    description: Presupuesto mensual por categoria y su avance
   - name: summary
     description: Agregados financieros calculados sobre las transacciones
 
@@ -722,6 +729,173 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "429":
           $ref: "#/components/responses/TooManyRequests"
+  /budgets:
+    get:
+      tags: [budgets]
+      summary: Lista los presupuestos de un mes
+      description: |
+        Devuelve el presupuesto de cada categoria para el mes indicado junto a lo que se
+        lleva gastado en ella, ordenado alfabeticamente por categoria.
+
+        El gasto es la suma de los egresos de esa categoria dentro del mes natural, que es
+        exactamente la misma cifra que devuelve el desglose por categoria de
+        /transactions/summary. Si divergieran, la barra de avance y el grafico de reparto
+        contarian cosas distintas del mismo periodo.
+
+        Solo aparecen las categorias que tienen presupuesto: no tener presupuesto no es lo
+        mismo que tenerlo en cero.
+      operationId: listBudgets
+      parameters:
+        - $ref: "#/components/parameters/BudgetMonth"
+        - $ref: "#/components/parameters/BudgetYear"
+      responses:
+        "200":
+          description: Presupuestos del mes con su avance
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BudgetResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    post:
+      tags: [budgets]
+      summary: Fija el presupuesto de una categoria para un mes
+      description: |
+        La categoria debe admitir egresos: presupuestar una de solo ingresos no significa
+        nada, porque el avance se mide contra lo gastado.
+        Cada categoria tiene como mucho un presupuesto por mes; repetirlo se rechaza con un
+        conflicto en lugar de sumarse al que ya hubiera.
+      operationId: createBudget
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveBudgetRequest"
+      responses:
+        "201":
+          description: Presupuesto creado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BudgetResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /budgets/copy:
+    post:
+      tags: [budgets]
+      summary: Copia los presupuestos de un mes a otro
+      description: |
+        Lleva al mes destino los presupuestos que tuviera el mes origen, con sus mismos
+        importes. Es lo que evita volver a teclear el plan entero cada dia uno.
+
+        Solo se copian las categorias que en el destino todavia no tienen presupuesto: lo
+        ya fijado alli manda y no se pisa, de modo que repetir la operacion no cambia nada
+        la segunda vez.
+
+        Devuelve el mes destino completo tal y como queda, no solo lo copiado.
+      operationId: copyBudgets
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CopyBudgetsRequest"
+      responses:
+        "200":
+          description: Presupuestos del mes destino tras la copia
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BudgetResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /budgets/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathId"
+    patch:
+      tags: [budgets]
+      summary: Cambia el importe de un presupuesto
+      description: |
+        Solo se cambia el importe. La categoria y el mes identifican al presupuesto: para
+        moverlo a otra categoria o a otro mes se borra y se crea, que ademas deja claro que
+        el avance del mes anterior se queda como estaba.
+      operationId: updateBudget
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBudgetRequest"
+      responses:
+        "200":
+          description: Presupuesto actualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BudgetResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    delete:
+      tags: [budgets]
+      summary: Quita el presupuesto de una categoria
+      description: |
+        Retira el plan, no el gasto: las transacciones de esa categoria siguen intactas y
+        el mes las sigue contando. La categoria simplemente deja de tener un limite contra
+        el que compararse.
+      operationId: deleteBudget
+      responses:
+        "204":
+          description: Presupuesto eliminado
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -789,6 +963,24 @@ components:
       schema:
         type: integer
         format: int64
+    BudgetMonth:
+      name: month
+      in: query
+      description: Mes del presupuesto, entre 1 y 12
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 12
+    BudgetYear:
+      name: year
+      in: query
+      description: Anio del presupuesto
+      required: true
+      schema:
+        type: integer
+        minimum: 1970
+        maximum: 9999
     TagFilter:
       name: tag
       in: query
@@ -1249,6 +1441,102 @@ components:
         transactionCount:
           type: integer
           format: int64
+
+    BudgetResponse:
+      type: object
+      description: |
+        Presupuesto de una categoria para un mes, junto a lo que se lleva gastado en ella.
+        El plan y la realidad viajan juntos porque por separado no dicen nada: un limite de
+        400 solo significa algo al lado de los 340 que ya se fueron.
+      required: [id, categoryId, category, month, year, amount, spent, remaining]
+      properties:
+        id:
+          type: integer
+          format: int64
+        categoryId:
+          type: integer
+          format: int64
+        category:
+          type: string
+          description: Nombre de la categoria presupuestada
+        month:
+          type: integer
+          minimum: 1
+          maximum: 12
+        year:
+          type: integer
+        amount:
+          type: number
+          description: Importe presupuestado para el mes
+        spent:
+          type: number
+          description: |
+            Egresos de esa categoria dentro del mes. Es la misma cifra que el campo expense
+            del desglose por categoria de /transactions/summary para el mismo periodo.
+        remaining:
+          type: number
+          description: |
+            Lo que queda del presupuesto: amount menos spent. Es negativo cuando el gasto
+            ya se paso del limite, que es justo el caso que hay que poder ver.
+
+    SaveBudgetRequest:
+      type: object
+      description: Cuerpo de alta de un presupuesto
+      required: [categoryId, month, year, amount]
+      properties:
+        categoryId:
+          type: integer
+          format: int64
+          description: Categoria a presupuestar. Debe admitir egresos.
+        month:
+          type: integer
+          minimum: 1
+          maximum: 12
+        year:
+          type: integer
+          minimum: 1970
+          maximum: 9999
+        amount:
+          type: number
+          minimum: 0
+          exclusiveMinimum: true
+          description: Importe presupuestado, siempre mayor que cero
+
+    UpdateBudgetRequest:
+      type: object
+      description: Cuerpo de actualizacion del importe de un presupuesto
+      required: [amount]
+      properties:
+        amount:
+          type: number
+          minimum: 0
+          exclusiveMinimum: true
+
+    CopyBudgetsRequest:
+      type: object
+      description: Peticion de copia de los presupuestos de un mes a otro
+      required: [sourceMonth, sourceYear, month, year]
+      properties:
+        sourceMonth:
+          type: integer
+          minimum: 1
+          maximum: 12
+          description: Mes del que se copia
+        sourceYear:
+          type: integer
+          minimum: 1970
+          maximum: 9999
+          description: Anio del que se copia
+        month:
+          type: integer
+          minimum: 1
+          maximum: 12
+          description: Mes al que se copia
+        year:
+          type: integer
+          minimum: 1970
+          maximum: 9999
+          description: Anio al que se copia
 
     ErrorResponse:
       type: object

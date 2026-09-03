@@ -1,0 +1,10 @@
+-- Reverso de V2__budgets.sql.
+--
+-- No lo aplica Flyway: se guarda con extension .txt a proposito para que no lo tome por
+-- una migracion. Es para deshacer a mano la funcionalidad de presupuestos si hiciera
+-- falta volver atras.
+--
+-- Borra los presupuestos de todos los usuarios. No toca ninguna transaccion: el
+-- presupuesto es el plan y vive aparte de lo que de verdad se gasto.
+
+DROP TABLE IF EXISTS budgets;
