@@ -22,6 +22,8 @@ import java.math.BigDecimal;
  * @param budgetYear         año al que se aplica
  * @param budgetAmount       importe presupuestado
  * @param budgetSpent        egresos de la categoría dentro del mes, cero si no hubo ninguno
+ * @param budgetCommitted    importe de los movimientos fijos de la categoría que vencen ese
+ *                           mes y todavía no se han confirmado, cero si no hay ninguno
  */
 public record BudgetProgress(
     Long budgetId,
@@ -30,5 +32,6 @@ public record BudgetProgress(
     Integer budgetMonth,
     Integer budgetYear,
     BigDecimal budgetAmount,
-    BigDecimal budgetSpent) {
+    BigDecimal budgetSpent,
+    BigDecimal budgetCommitted) {
 }

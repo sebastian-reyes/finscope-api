@@ -27,6 +27,16 @@ public final class Constants {
   public static final String BUDGET_CATEGORY_NOT_APPLICABLE =
       "Category {} does not take expenses, so there is nothing to budget against";
 
+  public static final String RECURRING_NOT_FOUND = "Recurring transaction not found with id: ";
+  public static final String RECURRING_ALREADY_CONFIRMED =
+      "{} is already confirmed for that month. Delete its transaction to undo it";
+  public static final String RECURRING_SKIPPED =
+      "{} is skipped for that month. Undo the skip before confirming it";
+  public static final String RECURRING_NOT_DUE =
+      "{} is not due on that month, so there is nothing to confirm or to skip";
+  public static final String RECURRING_DATE_OUT_OF_PERIOD =
+      "The date of a confirmed recurring transaction must fall inside the month it confirms";
+
   public static final String INVALID_MONTH = "Invalid month. Month must be between 1 and 12.";
   public static final String INVALID_DATE_RANGE = "Invalid date range. dateFrom must be before dateTo.";
   public static final String CONFLICTING_DATE_FILTERS =

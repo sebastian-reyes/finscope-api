@@ -80,8 +80,12 @@ class BudgetServiceImplTest {
   }
 
   private BudgetProgress progress(String amount, String spent) {
+    return progress(amount, spent, "0.00");
+  }
+
+  private BudgetProgress progress(String amount, String spent, String committed) {
     return new BudgetProgress(BUDGET_ID, CATEGORY_ID, "Comida", MONTH, YEAR,
-        new BigDecimal(amount), new BigDecimal(spent));
+        new BigDecimal(amount), new BigDecimal(spent), new BigDecimal(committed));
   }
 
   @Test
@@ -121,7 +125,7 @@ class BudgetServiceImplTest {
         new BigDecimal("400.00"))).thenReturn(Mono.just(1L));
     when(budgetRepository.findByCategoryAndPeriod(USER_ID, CATEGORY_ID, MONTH, YEAR))
         .thenReturn(Mono.just(budget()));
-    when(budgetRepository.findProgressById(eq(USER_ID), eq(BUDGET_ID), any(), any()))
+    when(budgetRepository.findProgressById(eq(USER_ID), eq(BUDGET_ID), any(), any(), any(), any()))
         .thenReturn(Mono.just(progress("400.00", "0.00")));
 
     StepVerifier.create(budgetService.createBudget(USER_ID, CATEGORY_ID, MONTH, YEAR,
@@ -171,7 +175,7 @@ class BudgetServiceImplTest {
         .expectError(BudgetAlreadySetException.class)
         .verify();
 
-    verify(budgetRepository, never()).findProgressById(any(), any(), any(), any());
+    verify(budgetRepository, never()).findProgressById(any(), any(), any(), any(), any(), any());
   }
 
   @Test
@@ -180,7 +184,7 @@ class BudgetServiceImplTest {
     when(budgetRepository.findByIdAndUserId(BUDGET_ID, USER_ID)).thenReturn(Mono.just(budget()));
     when(budgetRepository.save(any(Budget.class))).thenAnswer(call -> Mono.just(call
         .getArgument(0)));
-    when(budgetRepository.findProgressById(eq(USER_ID), eq(BUDGET_ID), any(), any()))
+    when(budgetRepository.findProgressById(eq(USER_ID), eq(BUDGET_ID), any(), any(), any(), any()))
         .thenReturn(Mono.just(progress("500.00", "340.00")));
 
     StepVerifier.create(budgetService.updateBudget(USER_ID, BUDGET_ID, new BigDecimal("500.00")))
@@ -226,7 +230,7 @@ class BudgetServiceImplTest {
     when(budgetRepository.findProgressByPeriod(eq(USER_ID), eq(MONTH), eq(YEAR), any(), any()))
         .thenReturn(Flux.just(progress("400.00", "0.00"),
             new BudgetProgress(12L, 5L, "Transporte", MONTH, YEAR, new BigDecimal("150.00"),
-                new BigDecimal("20.00"))));
+                new BigDecimal("20.00"), new BigDecimal("0.00"))));
 
     StepVerifier.create(budgetService.copyBudgets(USER_ID, 7, YEAR, MONTH, YEAR))
         .expectNextCount(2)

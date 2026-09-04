@@ -1,0 +1,18 @@
+-- Reverso de V3__recurring_transactions.sql.
+--
+-- No lo aplica Flyway: se guarda con extension .txt a proposito para que no lo tome por
+-- una migracion. Es para deshacer a mano la funcionalidad de movimientos fijos si hiciera
+-- falta volver atras.
+--
+-- Borra las plantillas y sus omisiones de todos los usuarios. Las transacciones que se
+-- crearon confirmandolas se quedan: son movimientos reales y siguen siendolo aunque la
+-- plantilla que los sugirio desaparezca. Lo unico que pierden es el enlace.
+
+DROP INDEX IF EXISTS idx_transactions_recurring;
+
+ALTER TABLE transactions
+    DROP COLUMN IF EXISTS recurring_id;
+
+DROP TABLE IF EXISTS recurring_skips;
+
+DROP TABLE IF EXISTS recurring_transactions;

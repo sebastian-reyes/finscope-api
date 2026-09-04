@@ -516,6 +516,6 @@ class TransactionCommandServiceImplTest {
    */
   private Transaction existingTransaction() {
     return new Transaction(10L, new BigDecimal("300.00"), "Original",
-        LocalDateTime.of(2026, 4, 26, 13, 35), USER_ID, 2L, 3L);
+        LocalDateTime.of(2026, 4, 26, 13, 35), USER_ID, 2L, 3L, null);
   }
 }

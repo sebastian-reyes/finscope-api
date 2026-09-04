@@ -1,6 +1,5 @@
 package com.sreyes.finscope.service.impl;
 
-import com.sreyes.finscope.api.model.CategoryScope;
 import com.sreyes.finscope.api.model.CreateTransactionRequest;
 import com.sreyes.finscope.api.model.UpdateTransactionRequest;
 import com.sreyes.finscope.exception.custom.CategoryNotApplicableException;
@@ -19,6 +18,7 @@ import com.sreyes.finscope.repository.TransactionTagRepository;
 import com.sreyes.finscope.repository.TransactionTypeRepository;
 import com.sreyes.finscope.service.TransactionCommandService;
 import com.sreyes.finscope.util.constants.Constants;
+import com.sreyes.finscope.util.rules.CategoryRules;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
@@ -182,26 +182,10 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
     return categoryRepository.findByIdAndUserId(categoryId, userId)
         .switchIfEmpty(Mono.error(new CategoryNotFoundException(
             Constants.CATEGORY_NOT_FOUND + categoryId)))
-        .flatMap(category -> admits(category, type)
+        .flatMap(category -> CategoryRules.admits(category, type)
             ? Mono.just(category)
             : Mono.error(new CategoryNotApplicableException(
                 Constants.CATEGORY_NOT_APPLICABLE.replace("{}", category.getName()))));
-  }
-
-  /**
-   * Decide si una categoría puede clasificar un tipo de movimiento.
-   * Una categoría sin ámbito declarado se admite en cualquiera: el campo solo existe para
-   * afinar lo que propone el formulario, no para bloquear lo que el usuario ya eligió.
-   *
-   * @param category categoría elegida
-   * @param type     tipo de la transacción
-   * @return si la categoría admite ese tipo
-   */
-  private boolean admits(Category category, TransactionType type) {
-    String scope = category.getAppliesTo();
-    return scope == null
-        || CategoryScope.BOTH.getValue().equals(scope)
-        || scope.equals(type.getCode());
   }
 
   /**

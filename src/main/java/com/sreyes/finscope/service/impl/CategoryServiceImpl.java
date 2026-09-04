@@ -7,6 +7,7 @@ import com.sreyes.finscope.exception.custom.SystemCategoryException;
 import com.sreyes.finscope.model.entity.Category;
 import com.sreyes.finscope.model.query.CategoryUsage;
 import com.sreyes.finscope.repository.CategoryRepository;
+import com.sreyes.finscope.repository.RecurringTransactionRepository;
 import com.sreyes.finscope.repository.TransactionRepository;
 import com.sreyes.finscope.service.CategoryService;
 import com.sreyes.finscope.util.constants.Constants;
@@ -23,7 +24,9 @@ import reactor.core.publisher.Mono;
  * El catálogo es del usuario y se puede editar entero, con una sola excepción: la
  * categoría de reserva no se borra. Es la que recibe los movimientos de las categorías
  * eliminadas, y sin ella una eliminación dejaría transacciones sin categoría, que es
- * obligatoria. Por eso borrar nunca destruye movimientos: los reasigna.
+ * obligatoria. Por eso borrar nunca destruye movimientos: los reasigna. Los movimientos
+ * fijos siguen a las transacciones y se reasignan igual: perder el alquiler por reordenar
+ * el catálogo sería desproporcionado.
  *
  * La unicidad del nombre se comprueba antes de escribir, pero quien la garantiza de
  * verdad es la restricción de la base de datos: entre la comprobación y la escritura cabe
@@ -59,6 +62,7 @@ public class CategoryServiceImpl implements CategoryService {
 
   private final CategoryRepository categoryRepository;
   private final TransactionRepository transactionRepository;
+  private final RecurringTransactionRepository recurringTransactionRepository;
 
   @Override
   public Flux<CategoryUsage> findCategories(Long userId) {
@@ -102,6 +106,12 @@ public class CategoryServiceImpl implements CategoryService {
    * <p>Las transacciones que clasificaba pasan a la categoría de reserva antes de borrar
    * la fila, porque la clave foránea no permite dejarlas apuntando a algo que ya no
    * existe y perderlas no es una opción.</p>
+   *
+   * <p>Los movimientos fijos se reasignan con ellas. La base los borraría en cascada, que
+   * es lo que sostiene el borrado de una cuenta entera, pero perder el alquiler por
+   * reordenar el catálogo sería desproporcionado: se mueven antes de que la cascada tenga
+   * nada que llevarse. Los presupuestos, en cambio, sí se van, porque una categoría no
+   * puede tener dos en el mismo mes.</p>
    */
   @Override
   public Mono<Void> deleteCategory(Long userId, Long id) {
@@ -110,8 +120,10 @@ public class CategoryServiceImpl implements CategoryService {
             ? Mono.error(new SystemCategoryException(Constants.SYSTEM_CATEGORY_PROTECTED))
             : Mono.just(category))
         .flatMap(category -> resolveFallback(userId)
-            .flatMap(fallback -> transactionRepository.reassignCategory(userId, category.getId(),
-                fallback.getId()))
+            .flatMap(fallback -> transactionRepository
+                .reassignCategory(userId, category.getId(), fallback.getId())
+                .then(recurringTransactionRepository.reassignCategory(userId, category.getId(),
+                    fallback.getId())))
             .then(categoryRepository.delete(category)));
   }
 

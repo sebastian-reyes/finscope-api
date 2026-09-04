@@ -69,7 +69,7 @@ public class BudgetServiceImpl implements BudgetService {
                 .then(Mono.defer(() -> budgetRepository.findByCategoryAndPeriod(userId,
                     categoryId, month, year))))
             .flatMap(budget -> budgetRepository.findProgressById(userId, budget.getId(),
-                range.from(), range.to())));
+                month, year, range.from(), range.to())));
   }
 
   @Override
@@ -132,8 +132,8 @@ public class BudgetServiceImpl implements BudgetService {
    */
   private Mono<BudgetProgress> progressOf(Long userId, Budget budget) {
     return resolveMonth(budget.getMonth(), budget.getYear())
-        .flatMap(range -> budgetRepository.findProgressById(userId, budget.getId(), range.from(),
-            range.to()));
+        .flatMap(range -> budgetRepository.findProgressById(userId, budget.getId(),
+            budget.getMonth(), budget.getYear(), range.from(), range.to()));
   }
 
   /**

@@ -22,10 +22,19 @@ info:
     se gasto en ella. Vive aparte de las transacciones porque es un plan y no un
     hecho: borrar un movimiento no borra la intencion de gastar.
 
+    El movimiento fijo tambien mira hacia delante, pero de otra forma: es una plantilla
+    que dice que un cargo o un ingreso vuelve cada cierto tiempo. No genera nada solo.
+    Cada mes produce un pendiente que el usuario confirma, y esa confirmacion es la que
+    crea la transaccion, porque un historial que se inventa movimientos deja de servir
+    para lo unico que sirve, que es saber que paso. Lo que aun no se ha confirmado si
+    cuenta como comprometido contra el presupuesto de su categoria: cuatrocientos
+    presupuestados con ciento ochenta de internet todavia por pagar no son
+    cuatrocientos disponibles.
+
     Todos los recursos financieros pertenecen al usuario autenticado y estan aislados
     entre usuarios. Salvo los endpoints de autenticacion, todas las operaciones exigen
     un token de acceso.
-  version: 6.2.0
+  version: 6.3.0
 servers:
   - url: /
     description: Servidor local
@@ -44,6 +53,8 @@ tags:
     description: Gestion del catalogo de tags del usuario
   - name: budgets
     description: Presupuesto mensual por categoria y su avance
+  - name: recurring
+    description: Movimientos que se repiten y su confirmacion mes a mes
   - name: summary
     description: Agregados financieros calculados sobre las transacciones
 
@@ -896,6 +907,250 @@ paths:
         "429":
           $ref: "#/components/responses/TooManyRequests"
 
+  /recurring-transactions:
+    get:
+      tags: [recurring]
+      summary: Lista los movimientos fijos con su estado en un mes
+      description: |
+        Devuelve todas las plantillas del usuario, activas y pausadas, resueltas contra el
+        mes indicado: cuando vence en ese mes, en que estado esta y, si ya se confirmo, con
+        que movimiento.
+
+        Se devuelven todas y no solo las que tocan ese mes porque la pantalla de gestion
+        necesita verlas siempre; las que no aplican llegan con estado NOT_DUE y quien solo
+        quiera el checklist del mes filtra por estado.
+      operationId: listRecurringTransactions
+      parameters:
+        - $ref: "#/components/parameters/RecurringMonth"
+        - $ref: "#/components/parameters/RecurringYear"
+      responses:
+        "200":
+          description: Movimientos fijos del usuario con su estado en el mes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RecurringOccurrenceResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    post:
+      tags: [recurring]
+      summary: Da de alta un movimiento fijo
+      description: |
+        Crea la plantilla. No crea ningun movimiento, ni siquiera el del mes en curso: el
+        alta dice que ese cargo se repite, no que ya haya ocurrido.
+
+        La categoria debe admitir el tipo indicado, igual que al registrar un movimiento.
+      operationId: createRecurringTransaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveRecurringTransactionRequest"
+      responses:
+        "201":
+          description: Movimiento fijo creado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecurringTransactionResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /recurring-transactions/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathId"
+    patch:
+      tags: [recurring]
+      summary: Modifica un movimiento fijo
+      description: |
+        Cambia la plantilla de aqui en adelante. Los movimientos que ya se confirmaron con
+        ella no se tocan: son hechos, y subir el alquiler en octubre no cambia lo que se
+        pago en septiembre.
+
+        Solo se aplican los campos presentes. Devuelve la plantilla, sin el estado de
+        ningun mes: ese estado depende del mes que se mire y esta operacion no mira
+        ninguno.
+      operationId: updateRecurringTransaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRecurringTransactionRequest"
+      responses:
+        "200":
+          description: Movimiento fijo actualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecurringTransactionResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    delete:
+      tags: [recurring]
+      summary: Elimina un movimiento fijo
+      description: |
+        Borra la plantilla y sus omisiones. Los movimientos que se confirmaron con ella se
+        quedan, porque ocurrieron; lo unico que pierden es el enlace.
+
+        Para dejar de pagar algo casi siempre es mejor pausarlo poniendo active en false:
+        eso conserva el historial de los meses en los que si se pago.
+      operationId: deleteRecurringTransaction
+      responses:
+        "204":
+          description: Movimiento fijo eliminado
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /recurring-transactions/{id}/confirm:
+    parameters:
+      - $ref: "#/components/parameters/PathId"
+    post:
+      tags: [recurring]
+      summary: Confirma el movimiento fijo de un mes
+      description: |
+        Registra el movimiento del mes indicado y lo deja enlazado a su plantilla. Sin mas
+        cuerpo que el mes usa el importe estimado y el dia previsto; con amount o date se
+        corrige lo que de verdad se pago, que es el caso del recibo de luz o del que llego
+        tarde.
+
+        Falla con conflicto si ese mes ya esta confirmado o si esta omitido, y con 400 si
+        el fijo no vence en ese mes. Deshacer una confirmacion es borrar el movimiento:
+        entonces el fijo vuelve solo a estar pendiente.
+      operationId: confirmRecurringTransaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmRecurringTransactionRequest"
+      responses:
+        "201":
+          description: Movimiento registrado y fijo marcado como pagado en ese mes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecurringOccurrenceResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /recurring-transactions/{id}/skip:
+    parameters:
+      - $ref: "#/components/parameters/PathId"
+    post:
+      tags: [recurring]
+      summary: Omite el movimiento fijo en un mes
+      description: |
+        Marca que ese mes no toca, sin tocar la plantilla ni los demas meses. El fijo deja
+        de aparecer como vencido y deja de contar como comprometido contra el presupuesto
+        de su categoria, que es lo que hace util la omision: lo que no se va a pagar no
+        deberia estar reservando dinero.
+
+        Repetirla no cambia nada. Falla con conflicto si ese mes ya esta confirmado: para
+        deshacer eso hay que borrar el movimiento.
+      operationId: skipRecurringTransaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SkipRecurringTransactionRequest"
+      responses:
+        "200":
+          description: Movimiento fijo omitido en ese mes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecurringOccurrenceResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    delete:
+      tags: [recurring]
+      summary: Deshace la omision de un mes
+      description: |
+        Devuelve el fijo a pendiente en ese mes. Si no estaba omitido no cambia nada y
+        responde igual, de modo que deshacer siempre es seguro.
+      operationId: unskipRecurringTransaction
+      parameters:
+        - $ref: "#/components/parameters/RecurringMonth"
+        - $ref: "#/components/parameters/RecurringYear"
+      responses:
+        "200":
+          description: Movimiento fijo de vuelta a pendiente en ese mes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecurringOccurrenceResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -976,6 +1231,24 @@ components:
       name: year
       in: query
       description: Anio del presupuesto
+      required: true
+      schema:
+        type: integer
+        minimum: 1970
+        maximum: 9999
+    RecurringMonth:
+      name: month
+      in: query
+      description: Mes contra el que se resuelve el estado del fijo, entre 1 y 12
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 12
+    RecurringYear:
+      name: year
+      in: query
+      description: Anio contra el que se resuelve el estado del fijo
       required: true
       schema:
         type: integer
@@ -1448,7 +1721,9 @@ components:
         Presupuesto de una categoria para un mes, junto a lo que se lleva gastado en ella.
         El plan y la realidad viajan juntos porque por separado no dicen nada: un limite de
         400 solo significa algo al lado de los 340 que ya se fueron.
-      required: [id, categoryId, category, month, year, amount, spent, remaining]
+      required:
+        [id, categoryId, category, month, year, amount, spent, committed, remaining,
+         available]
       properties:
         id:
           type: integer
@@ -1473,11 +1748,26 @@ components:
           description: |
             Egresos de esa categoria dentro del mes. Es la misma cifra que el campo expense
             del desglose por categoria de /transactions/summary para el mismo periodo.
+        committed:
+          type: number
+          description: |
+            Lo que los movimientos fijos de esa categoria van a llevarse este mes y todavia
+            no se han llevado: la suma de los que vencen en el mes, estan activos y no estan
+            ni confirmados ni omitidos.
+
+            Es dinero que aun no figura en spent pero que ya tiene dueno. Sin el, un
+            presupuesto de 400 con 120 gastados aparenta 280 libres cuando el internet de
+            180 sigue sin pagarse.
         remaining:
           type: number
           description: |
             Lo que queda del presupuesto: amount menos spent. Es negativo cuando el gasto
             ya se paso del limite, que es justo el caso que hay que poder ver.
+        available:
+          type: number
+          description: |
+            Lo que de verdad queda libre: remaining menos committed. Es el numero con el que
+            se decide si se puede gastar algo mas este mes, y tambien puede ser negativo.
 
     SaveBudgetRequest:
       type: object
@@ -1537,6 +1827,280 @@ components:
           minimum: 1970
           maximum: 9999
           description: Anio al que se copia
+
+    RecurringStatus:
+      type: string
+      description: |
+        Estado de un movimiento fijo dentro de un mes concreto. No se guarda: se resuelve
+        al leer, mirando si hay un movimiento enlazado en ese mes y si el mes esta omitido.
+
+        NOT_DUE cubre dos casos distintos que para quien mira la lista son el mismo: la
+        plantilla esta pausada, o toca cada varios meses y ese no es uno de ellos. El campo
+        active distingue cual de los dos.
+      enum: [PENDING, OVERDUE, PAID, SKIPPED, NOT_DUE]
+
+    RecurringTransactionResponse:
+      type: object
+      description: |
+        Plantilla de un movimiento que se repite. Dice que ese cargo o ese ingreso vuelve
+        cada cierto tiempo, no que haya ocurrido: los hechos siguen siendo las
+        transacciones.
+
+        Es lo que devuelven el alta y la modificacion, y va sin estado de ningun mes: el
+        estado depende del mes que se mire. Para verla dentro de uno hay que listar ese mes.
+      required:
+        [id, categoryId, transactionTypeId, description, amount, dayOfMonth, everyMonths,
+         startMonth, startYear, active]
+      properties:
+        id:
+          type: integer
+          format: int64
+        categoryId:
+          type: integer
+          format: int64
+        transactionTypeId:
+          type: integer
+          format: int64
+          description: |
+            Tipo del movimiento que se repite. Un fijo tambien puede ser un ingreso: el
+            sueldo es lo mas recurrente que existe.
+        description:
+          type: string
+          description: Como lo llama el usuario, por ejemplo Alquiler o Internet
+        amount:
+          type: number
+          description: |
+            Lo que se suele pagar o cobrar, no lo definitivo. Al confirmar el mes se puede
+            corregir, y lo corregido vive en la transaccion; aqui se conserva la estimacion.
+        dayOfMonth:
+          type: integer
+          minimum: 1
+          maximum: 31
+          description: |
+            Dia previsto dentro del mes. Se recorta al ultimo dia en los meses cortos: un
+            cargo del 31 vence el 28 en febrero.
+        everyMonths:
+          type: integer
+          minimum: 1
+          maximum: 12
+          description: |
+            Cada cuantos meses toca, contando desde el mes de arranque. 1 mensual,
+            2 bimestral, 3 trimestral, 12 anual.
+        startMonth:
+          type: integer
+          minimum: 1
+          maximum: 12
+          description: |
+            Mes desde el que aplica. Antes de el no vence nunca, de modo que un fijo dado
+            de alta en septiembre no aparece como impagado en enero.
+        startYear:
+          type: integer
+          minimum: 1970
+          maximum: 9999
+        active:
+          type: boolean
+          description: |
+            Un fijo pausado no vence en ningun mes ni compromete presupuesto, pero conserva
+            los meses en los que si se pago. Es lo que hay que usar al dejar de pagar algo,
+            en lugar de borrarlo.
+
+    RecurringOccurrenceResponse:
+      type: object
+      description: |
+        La plantilla resuelta contra un mes: si vence en el, en que estado esta y, cuando
+        ya se confirmo, con que movimiento y por cuanto.
+
+        Plantilla y estado viajan juntos porque por separado no sirven de nada: una lista
+        de fijos sin saber cuales faltan no es un checklist, es un catalogo.
+      required:
+        [id, categoryId, category, transactionTypeId, type, description, amount,
+         dayOfMonth, everyMonths, startMonth, startYear, active, month, year, status]
+      properties:
+        id:
+          type: integer
+          format: int64
+        categoryId:
+          type: integer
+          format: int64
+        category:
+          type: string
+        transactionTypeId:
+          type: integer
+          format: int64
+        type:
+          type: string
+          enum: [INCOME, EXPENSE]
+        description:
+          type: string
+        amount:
+          type: number
+          description: Importe estimado de la plantilla, no el que se pago
+        dayOfMonth:
+          type: integer
+        everyMonths:
+          type: integer
+        startMonth:
+          type: integer
+        startYear:
+          type: integer
+        active:
+          type: boolean
+        month:
+          type: integer
+          minimum: 1
+          maximum: 12
+          description: Mes contra el que se resolvio el estado
+        year:
+          type: integer
+        dueDate:
+          type: string
+          format: date
+          description: |
+            Dia concreto en que vence dentro de ese mes, con el dia ya recortado a la
+            longitud del mes. Ausente cuando el estado es NOT_DUE, que es cuando no vence.
+        status:
+          $ref: "#/components/schemas/RecurringStatus"
+        transactionId:
+          type: integer
+          format: int64
+          description: Movimiento con el que se confirmo el mes. Solo viene si esta PAID.
+        paidAmount:
+          type: number
+          description: |
+            Importe del movimiento con el que se confirmo. Puede no coincidir con amount:
+            esa diferencia entre lo previsto y lo pagado es justo lo que interesa ver.
+        paidDate:
+          type: string
+          format: date-time
+          description: Fecha del movimiento con el que se confirmo
+
+    SaveRecurringTransactionRequest:
+      type: object
+      description: Cuerpo de alta de un movimiento fijo
+      required:
+        [categoryId, transactionTypeId, description, amount, dayOfMonth, startMonth,
+         startYear]
+      properties:
+        categoryId:
+          type: integer
+          format: int64
+          description: Categoria del movimiento. Debe admitir el tipo indicado.
+        transactionTypeId:
+          type: integer
+          format: int64
+        description:
+          type: string
+          minLength: 1
+          maxLength: 70
+        amount:
+          type: number
+          minimum: 0
+          exclusiveMinimum: true
+          description: Importe estimado, siempre mayor que cero
+        dayOfMonth:
+          type: integer
+          minimum: 1
+          maximum: 31
+        everyMonths:
+          type: integer
+          minimum: 1
+          maximum: 12
+          default: 1
+        startMonth:
+          type: integer
+          minimum: 1
+          maximum: 12
+        startYear:
+          type: integer
+          minimum: 1970
+          maximum: 9999
+
+    UpdateRecurringTransactionRequest:
+      type: object
+      description: |
+        Cuerpo de modificacion de un movimiento fijo. Solo se aplican los campos presentes,
+        y el cambio rige de aqui en adelante: los meses ya confirmados no se recalculan.
+      properties:
+        categoryId:
+          type: integer
+          format: int64
+        transactionTypeId:
+          type: integer
+          format: int64
+        description:
+          type: string
+          minLength: 1
+          maxLength: 70
+        amount:
+          type: number
+          minimum: 0
+          exclusiveMinimum: true
+        dayOfMonth:
+          type: integer
+          minimum: 1
+          maximum: 31
+        everyMonths:
+          type: integer
+          minimum: 1
+          maximum: 12
+        startMonth:
+          type: integer
+          minimum: 1
+          maximum: 12
+        startYear:
+          type: integer
+          minimum: 1970
+          maximum: 9999
+        active:
+          type: boolean
+
+    ConfirmRecurringTransactionRequest:
+      type: object
+      description: |
+        Confirmacion del movimiento fijo de un mes. El mes es obligatorio porque es lo que
+        se esta confirmando; lo demas solo hace falta cuando lo real no coincide con lo
+        previsto.
+      required: [month, year]
+      properties:
+        month:
+          type: integer
+          minimum: 1
+          maximum: 12
+        year:
+          type: integer
+          minimum: 1970
+          maximum: 9999
+        amount:
+          type: number
+          minimum: 0
+          exclusiveMinimum: true
+          description: Importe realmente pagado. Si no viene se usa el de la plantilla.
+        date:
+          type: string
+          format: date-time
+          description: |
+            Fecha real del movimiento. Si no viene se usa el dia previsto de ese mes, no el
+            dia de hoy: confirmar el 3 de octubre el alquiler de septiembre debe registrarlo
+            en septiembre o saldria del mes al que pertenece.
+        description:
+          type: string
+          minLength: 1
+          maxLength: 70
+          description: Texto del movimiento. Si no viene se usa el de la plantilla.
+
+    SkipRecurringTransactionRequest:
+      type: object
+      description: Mes que se omite
+      required: [month, year]
+      properties:
+        month:
+          type: integer
+          minimum: 1
+          maximum: 12
+        year:
+          type: integer
+          minimum: 1970
+          maximum: 9999
 
     ErrorResponse:
       type: object

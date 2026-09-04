@@ -2,6 +2,7 @@ package com.sreyes.finscope.repository;
 
 import com.sreyes.finscope.model.entity.Budget;
 import com.sreyes.finscope.model.query.BudgetProgress;
+import com.sreyes.finscope.util.query.RecurringSql;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import org.springframework.data.r2dbc.repository.Modifying;
@@ -35,6 +36,17 @@ public interface BudgetRepository extends R2dbcRepository<Budget, Long> {
    * <p>Solo suman los egresos, que es la misma cifra que da el desglose por categoría del
    * resumen. Si aquí se restaran además los ingresos de la categoría, la barra de avance y
    * el gráfico de reparto contarían cosas distintas del mismo periodo.</p>
+   *
+   * <p>Lo comprometido llega por una tercera unión: son los movimientos fijos de la
+   * categoría que vencen ese mes y todavía no se han confirmado ni omitido. Es dinero que
+   * aún no figura en lo gastado pero que ya tiene dueño, y sin él un presupuesto de 400 con
+   * 120 gastados aparenta 280 libres cuando el internet de 180 sigue sin pagarse. Solo
+   * cuentan los egresos, por lo mismo que arriba: un sueldo fijo no compromete un
+   * presupuesto de gasto.</p>
+   *
+   * <p>La condición de vencimiento es la misma constante que usa el listado de fijos. Si
+   * cada uno tuviera su copia, la pantalla de fijos diría que el internet vence este mes y
+   * esta barra no lo estaría contando, sin forma de saber cuál de las dos miente.</p>
    */
   String PROGRESS_SELECT = """
       SELECT b.id_budget AS budget_id,
@@ -43,7 +55,8 @@ public interface BudgetRepository extends R2dbcRepository<Budget, Long> {
              b.month AS budget_month,
              b.year AS budget_year,
              b.amount AS budget_amount,
-             COALESCE(s.spent, 0) AS budget_spent
+             COALESCE(s.spent, 0) AS budget_spent,
+             COALESCE(k.committed, 0) AS budget_committed
       FROM budgets b
       INNER JOIN categories c ON c.id_category = b.category_id
       LEFT JOIN (SELECT t.category_id AS category_id,
@@ -56,6 +69,27 @@ public interface BudgetRepository extends R2dbcRepository<Budget, Long> {
                    AND t.date >= :periodStart
                    AND t.date <= :periodEnd
                  GROUP BY t.category_id) s ON s.category_id = b.category_id
+      LEFT JOIN (SELECT r.category_id AS category_id,
+                        SUM(r.amount) AS committed
+                 FROM recurring_transactions r
+                 INNER JOIN transaction_types rt
+                         ON rt.id_transaction_type = r.transaction_type_id
+                 WHERE r.user_id = :userId
+                   AND rt.code = 'EXPENSE'
+      """
+      + "             AND " + RecurringSql.DUE_IN_PERIOD + "\n"
+      + """
+                   AND NOT EXISTS (SELECT 1
+                                   FROM recurring_skips k2
+                                   WHERE k2.recurring_id = r.id_recurring
+                                     AND k2.month = :month
+                                     AND k2.year = :year)
+                   AND NOT EXISTS (SELECT 1
+                                   FROM transactions t2
+                                   WHERE t2.recurring_id = r.id_recurring
+                                     AND t2.date >= :periodStart
+                                     AND t2.date <= :periodEnd)
+                 GROUP BY r.category_id) k ON k.category_id = b.category_id
       """;
 
   /**
@@ -82,8 +116,14 @@ public interface BudgetRepository extends R2dbcRepository<Budget, Long> {
    * Es la misma proyección que devuelve el listado, para que crear o cambiar el importe
    * responda exactamente con la forma con la que después se lista.
    *
+   * <p>El mes llega aparte aunque el presupuesto ya lo lleve dentro, porque lo
+   * comprometido se resuelve contra el mes natural y no contra la fila: las omisiones de
+   * los fijos se guardan por mes y año, no por rango de fechas.</p>
+   *
    * @param userId      identificador del usuario propietario
    * @param id          identificador del presupuesto
+   * @param month       mes del presupuesto, entre 1 y 12
+   * @param year        año del presupuesto
    * @param periodStart primer instante de su mes, inclusivo
    * @param periodEnd   último instante de su mes, inclusivo
    * @return el presupuesto con su avance envuelto en Mono
@@ -91,8 +131,8 @@ public interface BudgetRepository extends R2dbcRepository<Budget, Long> {
   @Query(PROGRESS_SELECT + """
       WHERE b.user_id = :userId AND b.id_budget = :id
       """)
-  Mono<BudgetProgress> findProgressById(Long userId, Long id, LocalDateTime periodStart,
-                                        LocalDateTime periodEnd);
+  Mono<BudgetProgress> findProgressById(Long userId, Long id, Integer month, Integer year,
+                                        LocalDateTime periodStart, LocalDateTime periodEnd);
 
   /**
    * Busca un presupuesto del usuario por su identificador.

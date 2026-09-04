@@ -50,4 +50,16 @@ public class Transaction {
   @Column("category_id")
   private Long categoryId;
 
+  /**
+   * Movimiento fijo que originó esta transacción, nulo en las que se registraron a mano.
+   * Es lo único que permite responder «ya pagué el alquiler de septiembre»: adivinarlo
+   * comparando importe, categoría y descripción se rompe el primer mes que se paga de más
+   * o se corrige el texto.
+   *
+   * Al borrar la transacción el enlace desaparece con ella y el fijo vuelve a estar
+   * pendiente, que es exactamente lo que ha pasado.
+   */
+  @Column("recurring_id")
+  private Long recurringId;
+
 }

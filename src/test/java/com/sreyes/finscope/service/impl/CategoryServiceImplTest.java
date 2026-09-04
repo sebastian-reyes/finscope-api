@@ -18,6 +18,7 @@ import com.sreyes.finscope.exception.custom.SystemCategoryException;
 import com.sreyes.finscope.model.entity.Category;
 import com.sreyes.finscope.model.query.CategoryUsage;
 import com.sreyes.finscope.repository.CategoryRepository;
+import com.sreyes.finscope.repository.RecurringTransactionRepository;
 import com.sreyes.finscope.repository.TransactionRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -45,6 +46,9 @@ class CategoryServiceImplTest {
 
   @Mock
   private TransactionRepository transactionRepository;
+
+  @Mock
+  private RecurringTransactionRepository recurringTransactionRepository;
 
   @InjectMocks
   private CategoryServiceImpl categoryService;
@@ -127,12 +131,34 @@ class CategoryServiceImplTest {
     when(categoryRepository.findByIdAndUserId(4L, USER_ID)).thenReturn(Mono.just(comida));
     when(categoryRepository.findSystemByUserId(USER_ID)).thenReturn(Mono.just(fallback()));
     when(transactionRepository.reassignCategory(USER_ID, 4L, 1L)).thenReturn(Mono.just(12L));
+    when(recurringTransactionRepository.reassignCategory(USER_ID, 4L, 1L))
+        .thenReturn(Mono.just(2L));
     when(categoryRepository.delete(comida)).thenReturn(Mono.empty());
 
     StepVerifier.create(categoryService.deleteCategory(USER_ID, 4L))
         .verifyComplete();
 
     verify(transactionRepository).reassignCategory(USER_ID, 4L, 1L);
+    verify(categoryRepository).delete(comida);
+  }
+
+  @Test
+  @DisplayName("Al eliminar una categoría, sus movimientos fijos también pasan a la de reserva")
+  void reassignsRecurringBeforeDeleting() {
+    Category comida = comida();
+    when(categoryRepository.findByIdAndUserId(4L, USER_ID)).thenReturn(Mono.just(comida));
+    when(categoryRepository.findSystemByUserId(USER_ID)).thenReturn(Mono.just(fallback()));
+    when(transactionRepository.reassignCategory(USER_ID, 4L, 1L)).thenReturn(Mono.just(12L));
+    when(recurringTransactionRepository.reassignCategory(USER_ID, 4L, 1L))
+        .thenReturn(Mono.just(2L));
+    when(categoryRepository.delete(comida)).thenReturn(Mono.empty());
+
+    StepVerifier.create(categoryService.deleteCategory(USER_ID, 4L))
+        .verifyComplete();
+
+    // La cascada de la base los borraría; se mueven antes para que reordenar el catálogo no
+    // se lleve por delante el alquiler.
+    verify(recurringTransactionRepository).reassignCategory(USER_ID, 4L, 1L);
     verify(categoryRepository).delete(comida);
   }
 
@@ -159,6 +185,8 @@ class CategoryServiceImplTest {
     when(categoryRepository.insertIfAbsent(USER_ID, "Otros", "BOTH", true))
         .thenReturn(Mono.just(1L));
     when(transactionRepository.reassignCategory(USER_ID, 4L, 1L)).thenReturn(Mono.just(0L));
+    when(recurringTransactionRepository.reassignCategory(USER_ID, 4L, 1L))
+        .thenReturn(Mono.just(0L));
     when(categoryRepository.delete(comida)).thenReturn(Mono.empty());
 
     StepVerifier.create(categoryService.deleteCategory(USER_ID, 4L))

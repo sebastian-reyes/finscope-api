@@ -80,7 +80,7 @@ class TransactionQueryServiceImplTest {
    */
   private void givenSearchReturnsOneTransaction(long totalElements) {
     Transaction transaction = new Transaction(1L, new BigDecimal("300.00"), "Videojuego",
-        LocalDateTime.of(2026, 8, 17, 20, 0), USER_ID, 3L, 5L);
+        LocalDateTime.of(2026, 8, 17, 20, 0), USER_ID, 3L, 5L, null);
     when(transactionSearchRepository.search(any(), any())).thenReturn(Flux.just(transaction));
     when(transactionSearchRepository.count(any())).thenReturn(Mono.just(totalElements));
     when(transactionTypeRepository.findAllById(any(Iterable.class)))

@@ -93,7 +93,7 @@ class TransactionControllerTest {
    */
   private Transaction savedTransaction() {
     return new Transaction(1L, new BigDecimal("300.00"), "Videojuego",
-        LocalDateTime.of(2026, 8, 17, 20, 0), USER_ID, 2L, 4L);
+        LocalDateTime.of(2026, 8, 17, 20, 0), USER_ID, 2L, 4L, null);
   }
 
   @Test

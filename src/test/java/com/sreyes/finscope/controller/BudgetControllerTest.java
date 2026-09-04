@@ -58,8 +58,12 @@ class BudgetControllerTest {
   }
 
   private BudgetProgress progress(String amount, String spent) {
+    return progress(amount, spent, "0.00");
+  }
+
+  private BudgetProgress progress(String amount, String spent, String committed) {
     return new BudgetProgress(BUDGET_ID, CATEGORY_ID, "Comida", 8, 2026, new BigDecimal(amount),
-        new BigDecimal(spent));
+        new BigDecimal(spent), new BigDecimal(committed));
   }
 
   @Test
@@ -68,7 +72,7 @@ class BudgetControllerTest {
     when(budgetService.findBudgets(USER_ID, 8, 2026)).thenReturn(Flux.just(
         progress("400.00", "340.00"),
         new BudgetProgress(12L, 5L, "Transporte", 8, 2026, new BigDecimal("150.00"),
-            new BigDecimal("20.00"))));
+            new BigDecimal("20.00"), new BigDecimal("0.00"))));
 
     webTestClient.get().uri("/budgets?month=8&year=2026")
         .exchange()
@@ -99,6 +103,23 @@ class BudgetControllerTest {
         .expectStatus().isOk()
         .expectBody()
         .jsonPath("$[0].remaining").isEqualTo(-55.50);
+  }
+
+  @Test
+  @DisplayName("Lo disponible descuenta los fijos que aún no se han pagado")
+  void discountsCommittedRecurring() {
+    when(budgetService.findBudgets(USER_ID, 8, 2026))
+        .thenReturn(Flux.just(progress("400.00", "120.00", "180.00")));
+
+    webTestClient.get().uri("/budgets?month=8&year=2026")
+        .exchange()
+        .expectStatus().isOk()
+        .expectBody()
+        .jsonPath("$[0].spent").isEqualTo(120.00)
+        .jsonPath("$[0].committed").isEqualTo(180.00)
+        // Lo que queda mira solo al pasado; lo disponible es con lo que se decide hoy.
+        .jsonPath("$[0].remaining").isEqualTo(280.00)
+        .jsonPath("$[0].available").isEqualTo(100.00);
   }
 
   @Test
