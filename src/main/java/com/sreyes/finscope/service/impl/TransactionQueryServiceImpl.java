@@ -125,7 +125,21 @@ public class TransactionQueryServiceImpl implements TransactionQueryService {
   private TransactionFilter buildFilter(Long userId, TransactionSearchCriteria criteria,
                                         DateRange range, List<Long> transactionIds) {
     return new TransactionFilter(userId, range.from(), range.to(),
-        criteria.transactionTypeId(), criteria.categoryId(), transactionIds);
+        criteria.transactionTypeId(), criteria.categoryId(), normalize(criteria.search()),
+        transactionIds);
+  }
+
+  /**
+   * Recorta el texto buscado y equipara el vacío con la ausencia de filtro.
+   * Un cuadro de búsqueda vaciado manda la cadena vacía, y entenderla al pie de la letra
+   * sería acotar a las descripciones que contienen nada, que son todas menos las que no
+   * tienen ninguna: justo lo contrario de lo que espera quien acaba de borrar lo que había.
+   *
+   * @param search texto buscado tal y como llega de la petición
+   * @return el texto recortado, o nulo si no aporta ningún criterio
+   */
+  private String normalize(String search) {
+    return search == null || search.isBlank() ? null : search.trim();
   }
 
   /**

@@ -32,9 +32,10 @@ public class TransactionSummaryController implements SummaryApi {
   @Override
   public Mono<ResponseEntity<TransactionSummaryResponse>> getTransactionSummary(
       Integer month, Integer year, LocalDateTime dateFrom, LocalDateTime dateTo,
-      Long transactionTypeId, Long categoryId, String tag, ServerWebExchange exchange) {
+      Long transactionTypeId, Long categoryId, String tag, String search,
+      ServerWebExchange exchange) {
     TransactionSummaryCriteria criteria = new TransactionSummaryCriteria(month, year, dateFrom,
-        dateTo, transactionTypeId, categoryId, tag);
+        dateTo, transactionTypeId, categoryId, tag, search);
     return authenticatedUser.currentUserId()
         .flatMap(userId -> transactionSummaryService.summarize(userId, criteria))
         .map(ResponseEntity::ok);
@@ -43,10 +44,10 @@ public class TransactionSummaryController implements SummaryApi {
   @Override
   public Mono<ResponseEntity<SummarySeriesResponse>> getTransactionSummarySeries(
       Integer month, Integer year, LocalDateTime dateFrom, LocalDateTime dateTo,
-      Long transactionTypeId, Long categoryId, String tag, SummaryGranularity granularity,
-      ServerWebExchange exchange) {
+      Long transactionTypeId, Long categoryId, String tag, String search,
+      SummaryGranularity granularity, ServerWebExchange exchange) {
     TransactionSummaryCriteria criteria = new TransactionSummaryCriteria(month, year, dateFrom,
-        dateTo, transactionTypeId, categoryId, tag);
+        dateTo, transactionTypeId, categoryId, tag, search);
     return authenticatedUser.currentUserId()
         .flatMap(userId -> transactionSummaryService.summarizeSeries(userId, criteria,
             granularity))
