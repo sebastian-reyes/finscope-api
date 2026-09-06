@@ -15,6 +15,8 @@ import java.time.LocalDateTime;
  * @param transactionTypeId identificador del tipo de transacción
  * @param categoryId        identificador de la categoría principal
  * @param tag               nombre del tag asociado, sin distinguir mayúsculas
+ * @param search            texto a buscar en la descripción, la categoría y los tags, sin
+ *                          distinguir mayúsculas
  */
 public record TransactionSummaryCriteria(
     Integer month,
@@ -23,5 +25,6 @@ public record TransactionSummaryCriteria(
     LocalDateTime dateTo,
     Long transactionTypeId,
     Long categoryId,
-    String tag) {
+    String tag,
+    String search) {
 }

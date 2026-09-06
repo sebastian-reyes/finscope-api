@@ -4,13 +4,11 @@ import com.sreyes.finscope.model.query.AmountTotal;
 import com.sreyes.finscope.model.query.DateRange;
 import com.sreyes.finscope.model.query.SummaryBucketSize;
 import com.sreyes.finscope.model.query.TransactionSummaryCriteria;
+import com.sreyes.finscope.util.query.LikePatterns;
+import com.sreyes.finscope.util.query.TransactionSql;
 import io.r2dbc.spi.Readable;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
 import java.util.function.Function;
 import lombok.RequiredArgsConstructor;
 import org.springframework.r2dbc.core.DatabaseClient;
@@ -177,11 +175,7 @@ public class TransactionSummaryRepository {
    */
   private Flux<AmountTotal> execute(String sql, Conditions conditions,
                                     Function<Readable, AmountTotal> mapper) {
-    DatabaseClient.GenericExecuteSpec spec = databaseClient.sql(sql);
-    for (Map.Entry<String, Object> binding : conditions.bindings().entrySet()) {
-      spec = spec.bind(binding.getKey(), binding.getValue());
-    }
-    return spec.map(mapper::apply).all();
+    return conditions.bind(databaseClient.sql(sql)).map(mapper::apply).all();
   }
 
   /**
@@ -210,6 +204,9 @@ public class TransactionSummaryRepository {
    * está presente, y únicamente los filtros informados.
    * El filtro por tag se resuelve con una subconsulta de existencia en lugar de con una
    * unión, para que acotar por tag no multiplique las filas que se agregan.
+   * El filtro por texto es el mismo que aplica el listado, y por eso sale de
+   * {@link TransactionSql}: es lo que hace que estos totales sumen exactamente los
+   * movimientos que la lista está enseñando.
    *
    * @param userId   identificador del usuario propietario
    * @param criteria filtros solicitados
@@ -218,47 +215,34 @@ public class TransactionSummaryRepository {
    */
   private Conditions buildConditions(Long userId, TransactionSummaryCriteria criteria,
                                      DateRange range) {
-    List<String> predicates = new ArrayList<>();
-    Map<String, Object> bindings = new LinkedHashMap<>();
-
-    predicates.add("t.user_id = :userId");
-    bindings.put("userId", userId);
+    Conditions conditions = new Conditions().add("t.user_id = :userId", "userId", userId);
 
     if (range.from() != null) {
-      predicates.add("t.date >= :dateFrom");
-      bindings.put("dateFrom", range.from());
+      conditions.add("t.date >= :dateFrom", "dateFrom", range.from());
     }
     if (range.to() != null) {
-      predicates.add("t.date <= :dateTo");
-      bindings.put("dateTo", range.to());
+      conditions.add("t.date <= :dateTo", "dateTo", range.to());
     }
     if (criteria.transactionTypeId() != null) {
-      predicates.add("t.transaction_type_id = :transactionTypeId");
-      bindings.put("transactionTypeId", criteria.transactionTypeId());
+      conditions.add("t.transaction_type_id = :transactionTypeId", "transactionTypeId",
+          criteria.transactionTypeId());
     }
     if (criteria.categoryId() != null) {
-      predicates.add("t.category_id = :categoryId");
-      bindings.put("categoryId", criteria.categoryId());
+      conditions.add("t.category_id = :categoryId", "categoryId", criteria.categoryId());
     }
     if (criteria.tag() != null && !criteria.tag().isBlank()) {
-      predicates.add("""
+      conditions.add("""
           EXISTS (SELECT 1
                   FROM transaction_tags ft
                   INNER JOIN tags fg ON fg.id_tag = ft.tag_id
                   WHERE ft.transaction_id = t.id_transaction
                     AND fg.user_id = :userId
-                    AND LOWER(fg.name_tag) = LOWER(:tag))""");
-      bindings.put("tag", criteria.tag().trim());
+                    AND LOWER(fg.name_tag) = LOWER(:tag))""", "tag", criteria.tag().trim());
     }
-    return new Conditions("WHERE " + String.join("\n  AND ", predicates) + "\n", bindings);
-  }
-
-  /**
-   * Cláusula de filtrado de una consulta junto a los valores que enlaza.
-   *
-   * @param sql      texto de la cláusula, terminado en salto de línea
-   * @param bindings valores a enlazar, indexados por el nombre del parámetro
-   */
-  private record Conditions(String sql, Map<String, Object> bindings) {
+    if (criteria.search() != null && !criteria.search().isBlank()) {
+      conditions.add(TransactionSql.MATCHES_TEXT, "search",
+          LikePatterns.contains(criteria.search().trim()));
+    }
+    return conditions;
   }
 }

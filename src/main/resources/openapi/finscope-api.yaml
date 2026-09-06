@@ -518,6 +518,7 @@ paths:
         - $ref: "#/components/parameters/TransactionTypeIdFilter"
         - $ref: "#/components/parameters/CategoryIdFilter"
         - $ref: "#/components/parameters/TagFilter"
+        - $ref: "#/components/parameters/SearchFilter"
         - name: page
           in: query
           description: Numero de pagina, empezando en cero
@@ -610,6 +611,7 @@ paths:
         - $ref: "#/components/parameters/TransactionTypeIdFilter"
         - $ref: "#/components/parameters/CategoryIdFilter"
         - $ref: "#/components/parameters/TagFilter"
+        - $ref: "#/components/parameters/SearchFilter"
       responses:
         "200":
           description: Resumen del periodo
@@ -644,6 +646,7 @@ paths:
         - $ref: "#/components/parameters/TransactionTypeIdFilter"
         - $ref: "#/components/parameters/CategoryIdFilter"
         - $ref: "#/components/parameters/TagFilter"
+        - $ref: "#/components/parameters/SearchFilter"
         - name: granularity
           in: query
           description: Tamanio de cada tramo
@@ -1264,6 +1267,18 @@ components:
       schema:
         type: string
         maxLength: 70
+    SearchFilter:
+      name: search
+      in: query
+      description: |
+        Devuelve unicamente las transacciones que responden al texto indicado, buscandolo en
+        su descripcion, en el nombre de su categoria y en el de cualquiera de sus tags.
+        La comparacion no distingue mayusculas de minusculas y los comodines del texto se
+        tratan como caracteres literales.
+      required: false
+      schema:
+        type: string
+        maxLength: 100
 
   responses:
     BadRequest:

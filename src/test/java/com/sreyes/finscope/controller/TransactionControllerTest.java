@@ -126,6 +126,7 @@ class TransactionControllerTest {
             .queryParam("year", 2026)
             .queryParam("transactionTypeId", 2)
             .queryParam("tag", "ocio")
+            .queryParam("search", "dentista")
             .queryParam("page", 2)
             .queryParam("size", 5)
             .queryParam("sort", "amount,asc")
@@ -141,6 +142,7 @@ class TransactionControllerTest {
     assertEquals(2026, criteria.year());
     assertEquals(2L, criteria.transactionTypeId());
     assertEquals("ocio", criteria.tag());
+    assertEquals("dentista", criteria.search());
     assertEquals(2, criteria.page());
     assertEquals(5, criteria.size());
     assertEquals("amount,asc", criteria.sort());

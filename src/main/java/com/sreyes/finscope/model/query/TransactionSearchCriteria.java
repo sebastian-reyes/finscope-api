@@ -15,6 +15,8 @@ import java.time.LocalDateTime;
  * @param transactionTypeId identificador del tipo de transacción
  * @param categoryId        identificador de la categoría principal
  * @param tag               nombre del tag asociado, sin distinguir mayúsculas
+ * @param search            texto a buscar en la descripción, la categoría y los tags, sin
+ *                          distinguir mayúsculas
  * @param page              número de página, empezando en cero
  * @param size              cantidad de elementos por página
  * @param sort              criterio de ordenamiento con formato campo,direccion
@@ -27,6 +29,7 @@ public record TransactionSearchCriteria(
     Long transactionTypeId,
     Long categoryId,
     String tag,
+    String search,
     Integer page,
     Integer size,
     String sort) {

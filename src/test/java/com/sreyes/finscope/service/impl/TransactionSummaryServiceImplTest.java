@@ -54,7 +54,7 @@ class TransactionSummaryServiceImplTest {
 
   /** Filtros sin acotar, que es como se pide el resumen de todo el historial. */
   private TransactionSummaryCriteria criteria() {
-    return new TransactionSummaryCriteria(null, null, null, null, null, null, null);
+    return new TransactionSummaryCriteria(null, null, null, null, null, null, null, null);
   }
 
   /**
