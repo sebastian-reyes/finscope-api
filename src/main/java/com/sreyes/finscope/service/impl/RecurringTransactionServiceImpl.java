@@ -25,6 +25,7 @@ import com.sreyes.finscope.repository.TransactionRepository;
 import com.sreyes.finscope.repository.TransactionTypeRepository;
 import com.sreyes.finscope.service.RecurringTransactionService;
 import com.sreyes.finscope.util.constants.Constants;
+import com.sreyes.finscope.util.patch.Patches;
 import com.sreyes.finscope.util.query.DateRanges;
 import com.sreyes.finscope.util.rules.CategoryRules;
 import java.time.Clock;
@@ -278,33 +279,15 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
    */
   private RecurringTransaction applyChanges(RecurringTransaction recurring,
                                             UpdateRecurringTransactionRequest request) {
-    if (request.getCategoryId() != null) {
-      recurring.setCategoryId(request.getCategoryId());
-    }
-    if (request.getTransactionTypeId() != null) {
-      recurring.setTransactionTypeId(request.getTransactionTypeId());
-    }
-    if (request.getDescription() != null) {
-      recurring.setDescription(request.getDescription());
-    }
-    if (request.getAmount() != null) {
-      recurring.setAmount(request.getAmount());
-    }
-    if (request.getDayOfMonth() != null) {
-      recurring.setDayOfMonth(request.getDayOfMonth());
-    }
-    if (request.getEveryMonths() != null) {
-      recurring.setEveryMonths(request.getEveryMonths());
-    }
-    if (request.getStartMonth() != null) {
-      recurring.setStartMonth(request.getStartMonth());
-    }
-    if (request.getStartYear() != null) {
-      recurring.setStartYear(request.getStartYear());
-    }
-    if (request.getActive() != null) {
-      recurring.setActive(request.getActive());
-    }
+    Patches.setIfPresent(request.getCategoryId(), recurring::setCategoryId);
+    Patches.setIfPresent(request.getTransactionTypeId(), recurring::setTransactionTypeId);
+    Patches.setIfPresent(request.getDescription(), recurring::setDescription);
+    Patches.setIfPresent(request.getAmount(), recurring::setAmount);
+    Patches.setIfPresent(request.getDayOfMonth(), recurring::setDayOfMonth);
+    Patches.setIfPresent(request.getEveryMonths(), recurring::setEveryMonths);
+    Patches.setIfPresent(request.getStartMonth(), recurring::setStartMonth);
+    Patches.setIfPresent(request.getStartYear(), recurring::setStartYear);
+    Patches.setIfPresent(request.getActive(), recurring::setActive);
     return recurring;
   }
 

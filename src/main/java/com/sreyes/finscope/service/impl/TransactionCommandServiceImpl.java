@@ -18,6 +18,7 @@ import com.sreyes.finscope.repository.TransactionTagRepository;
 import com.sreyes.finscope.repository.TransactionTypeRepository;
 import com.sreyes.finscope.service.TransactionCommandService;
 import com.sreyes.finscope.util.constants.Constants;
+import com.sreyes.finscope.util.patch.Patches;
 import com.sreyes.finscope.util.rules.CategoryRules;
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -109,21 +110,11 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
    * @return la transacción con los cambios aplicados
    */
   private Transaction applyChanges(Transaction transaction, UpdateTransactionRequest request) {
-    if (request.getAmount() != null) {
-      transaction.setAmount(request.getAmount());
-    }
-    if (request.getDescription() != null) {
-      transaction.setDescription(request.getDescription());
-    }
-    if (request.getDate() != null) {
-      transaction.setDate(request.getDate());
-    }
-    if (request.getTransactionTypeId() != null) {
-      transaction.setTransactionTypeId(request.getTransactionTypeId());
-    }
-    if (request.getCategoryId() != null) {
-      transaction.setCategoryId(request.getCategoryId());
-    }
+    Patches.setIfPresent(request.getAmount(), transaction::setAmount);
+    Patches.setIfPresent(request.getDescription(), transaction::setDescription);
+    Patches.setIfPresent(request.getDate(), transaction::setDate);
+    Patches.setIfPresent(request.getTransactionTypeId(), transaction::setTransactionTypeId);
+    Patches.setIfPresent(request.getCategoryId(), transaction::setCategoryId);
     return transaction;
   }
 
