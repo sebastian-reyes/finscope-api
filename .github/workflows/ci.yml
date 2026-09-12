@@ -1,0 +1,47 @@
+# Comprobación automática de la API.
+#
+# Las 202 pruebas del proyecto solo valen si alguien las lanza, y hasta ahora eso dependía de
+# acordarse. Aquí se ejecutan en cada empujón a `master` y en cada pull request, que son los dos
+# momentos en los que todavía es barato enterarse de que algo se ha roto.
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+# Empujar dos veces seguidas a la misma rama cancela la comprobación anterior: lo que importa es
+# el estado del último commit, y dejar corriendo la del penúltimo solo gasta minutos.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          # La misma que fija `<java.version>` en el pom. Si una sube y la otra no, lo que falla
+          # es la compilación, que es la forma ruidosa de enterarse y por tanto la buena.
+          java-version: '25'
+          distribution: temurin
+          # Guarda `~/.m2` entre ejecuciones apoyándose en el pom: sin esto cada comprobación
+          # vuelve a descargar Spring Boot entero.
+          cache: maven
+
+      # `verify` y no `test`: por delante de las pruebas pasa el generador de OpenAPI, que
+      # construye las interfaces de los controllers a partir de `finscope-api.yaml`. Es lo que
+      # convierte una discrepancia entre el contrato y la implementación en un fallo de
+      # compilación aquí, en lugar de en un 404 en el navegador.
+      #
+      # `-B` quita las barras de progreso, que en un log sin terminal solo son ruido, y `-ntp`
+      # las líneas de descarga.
+      #
+      # No hace falta base de datos: las pruebas son unitarias y de controller con el
+      # repositorio simulado. El día que entren pruebas con Testcontainers sobre Postgres, el
+      # runner ya trae Docker y este mismo paso las ejecutará sin cambios.
+      - name: Compilar y probar
+        run: ./mvnw -B -ntp verify
