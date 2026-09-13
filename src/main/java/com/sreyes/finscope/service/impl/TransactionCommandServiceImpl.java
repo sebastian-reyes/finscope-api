@@ -7,7 +7,6 @@ import com.sreyes.finscope.exception.custom.CategoryNotFoundException;
 import com.sreyes.finscope.exception.custom.TransactionNotFoundException;
 import com.sreyes.finscope.exception.custom.TransactionTypeNotFoundException;
 import com.sreyes.finscope.model.entity.Category;
-import com.sreyes.finscope.model.entity.Tag;
 import com.sreyes.finscope.model.entity.Transaction;
 import com.sreyes.finscope.model.entity.TransactionTag;
 import com.sreyes.finscope.model.entity.TransactionType;
@@ -20,15 +19,12 @@ import com.sreyes.finscope.service.TransactionCommandService;
 import com.sreyes.finscope.util.constants.Constants;
 import com.sreyes.finscope.util.patch.Patches;
 import com.sreyes.finscope.util.rules.CategoryRules;
+import com.sreyes.finscope.util.rules.TagRules;
 import java.time.Clock;
 import java.time.LocalDateTime;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
@@ -53,7 +49,7 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
 
   @Override
   public Mono<Transaction> createTransaction(Long userId, CreateTransactionRequest request) {
-    List<String> tags = normalizeTags(request.getTags());
+    List<String> tags = TagRules.normalize(request.getTags());
     return requireTransactionType(request.getTransactionTypeId())
         .flatMap(type -> requireUsableCategory(userId, request.getCategoryId(), type))
         .then(Mono.defer(() -> transactionRepository.save(toEntity(userId, request))))
@@ -63,7 +59,7 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
   @Override
   public Mono<Transaction> updateTransaction(Long userId, Long id,
                                              UpdateTransactionRequest request) {
-    List<String> tags = normalizeTags(request.getTags());
+    List<String> tags = TagRules.normalize(request.getTags());
     return transactionRepository.findByIdAndUserId(id, userId)
         .switchIfEmpty(Mono.error(new TransactionNotFoundException(
             Constants.TRANSACTION_NOT_FOUND + id)))
@@ -193,55 +189,11 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
     return transactionTagRepository.deleteByTransactionId(transactionId)
         .then(Mono.defer(() -> names.isEmpty()
             ? Mono.empty()
-            : resolveTagIds(userId, names)
+            : TagRules.resolveIds(tagRepository, userId, names)
                 .flatMapMany(tagIds -> transactionTagRepository.saveAll(tagIds.stream()
                     .map(tagId -> new TransactionTag(null, transactionId, tagId))
                     .toList()))
                 .then()));
   }
 
-  /**
-   * Resuelve el identificador de cada nombre de tag, dando de alta en el catálogo del
-   * usuario los que todavía no existan.
-   * El alta se intenta para todos y la base de datos descarta los que ya estaban, así que
-   * después basta con leer el catálogo una vez para tener los identificadores de los tags
-   * nuevos y de los reutilizados.
-   * Cuando el usuario escribe un tag que ya tiene con otra grafía, se reutiliza el
-   * existente: `casa` sobre un `Casa` previo no crea un tag nuevo ni renombra el anterior.
-   *
-   * @param userId identificador del usuario propietario
-   * @param names  nombres de tag ya normalizados
-   * @return identificadores de los tags correspondientes
-   */
-  private Mono<List<Long>> resolveTagIds(Long userId, List<String> names) {
-    List<String> lowerNames = names.stream()
-        .map(name -> name.toLowerCase(Locale.ROOT))
-        .toList();
-    return Flux.fromIterable(names)
-        .concatMap(name -> tagRepository.insertIfAbsent(userId, name))
-        .then(tagRepository.findByUserIdAndLowerNameIn(userId, lowerNames)
-            .map(Tag::getId)
-            .collectList());
-  }
-
-  /**
-   * Normaliza los tags de la petición recortando los espacios sobrantes, descartando los
-   * vacíos y eliminando los repetidos sin distinguir mayúsculas, de modo que `Casa` y
-   * `casa` no acaben conviviendo en la misma transacción. Se conserva la primera grafía
-   * recibida y el orden de llegada.
-   *
-   * @param names nombres de tag recibidos, puede ser nulo
-   * @return nombres de tag listos para persistirse
-   */
-  private List<String> normalizeTags(List<String> names) {
-    if (names == null) {
-      return List.of();
-    }
-    Map<String, String> distinct = new LinkedHashMap<>();
-    names.stream()
-        .filter(name -> name != null && !name.isBlank())
-        .map(String::trim)
-        .forEach(name -> distinct.putIfAbsent(name.toLowerCase(Locale.ROOT), name));
-    return List.copyOf(distinct.values());
-  }
 }

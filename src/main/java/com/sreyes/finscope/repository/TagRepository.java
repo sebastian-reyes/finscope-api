@@ -1,6 +1,7 @@
 package com.sreyes.finscope.repository;
 
 import com.sreyes.finscope.model.entity.Tag;
+import com.sreyes.finscope.model.query.RecurringTagName;
 import com.sreyes.finscope.model.query.TagUsage;
 import com.sreyes.finscope.model.query.TransactionTagName;
 import java.util.Collection;
@@ -15,8 +16,12 @@ import reactor.core.publisher.Mono;
  * Repositorio para la entidad {@link Tag}.
  * Proporciona operaciones reactivas de acceso a datos sobre la tabla `tags`, que es el
  * catálogo de tags de cada usuario. La relación con las transacciones se consulta a través
- * de `transaction_tags`, por lo que las consultas que parten de una transacción o llegan a
- * ella pasan siempre por esa tabla de enlace.
+ * de `transaction_tags`, y la de los movimientos fijos a través de `recurring_tags`, por lo
+ * que las consultas que parten de una u otro o llegan a ellos pasan siempre por su tabla de
+ * enlace.
+ *
+ * El catálogo es el mismo para las dos cosas a propósito: un tag no significa una cosa en un
+ * fijo y otra en el movimiento que sale de confirmarlo.
  */
 @Repository
 public interface TagRepository extends R2dbcRepository<Tag, Long> {
@@ -36,6 +41,23 @@ public interface TagRepository extends R2dbcRepository<Tag, Long> {
       WHERE tt.transaction_id IN (:transactionIds)
       """)
   Flux<TransactionTagName> findNamesByTransactionIdIn(Collection<Long> transactionIds);
+
+  /**
+   * Obtiene en una sola consulta los tags de todos los movimientos fijos indicados.
+   * Es la misma carga en lote que la de las transacciones y por el mismo motivo: la
+   * pantalla de fijos lista todas las plantillas del usuario, y preguntar tag a tag
+   * significaría una consulta por fila.
+   *
+   * @param recurringIds identificadores de las plantillas
+   * @return flujo reactivo con el nombre de cada tag y la plantilla que lo lleva
+   */
+  @Query("""
+      SELECT rt.recurring_id AS recurring_id, t.name_tag AS tag_name
+      FROM recurring_tags rt
+      INNER JOIN tags t ON t.id_tag = rt.tag_id
+      WHERE rt.recurring_id IN (:recurringIds)
+      """)
+  Flux<RecurringTagName> findNamesByRecurringIdIn(Collection<Long> recurringIds);
 
   /**
    * Obtiene los nombres distintos de tag que el usuario está usando, en orden alfabético.

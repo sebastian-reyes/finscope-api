@@ -2,8 +2,8 @@ package com.sreyes.finscope.util.mapper;
 
 import com.sreyes.finscope.api.model.RecurringOccurrenceResponse;
 import com.sreyes.finscope.api.model.RecurringTransactionResponse;
-import com.sreyes.finscope.model.entity.RecurringTransaction;
 import com.sreyes.finscope.model.query.RecurringOccurrence;
+import com.sreyes.finscope.model.query.RecurringTemplate;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 
@@ -14,22 +14,37 @@ import org.mapstruct.Mapping;
  * entidad y es lo que devuelven el alta y la modificación, que no están mirando ningún mes.
  * La ocurrencia sale de la proyección y lleva además el día de vencimiento y el estado, que
  * no viven en ninguna tabla y se resuelven al leer.
+ *
+ * Los tags entran en las dos por separado, nunca desde la entidad ni desde la proyección:
+ * viven en su tabla de enlace y el servicio los carga en lote, igual que los de una página
+ * de transacciones.
  */
 @Mapper(componentModel = "spring")
 public interface RecurringTransactionMapper {
 
   /**
-   * Convierte la plantilla guardada en su representación de respuesta.
+   * Convierte la plantilla guardada, con sus tags, en su representación de respuesta.
    *
-   * <p>Aquí no hacen falta correspondencias explícitas: las propiedades se llaman igual a
-   * ambos lados. La plantilla no lleva el nombre de la categoría ni el código del tipo
-   * porque son catálogos que el cliente ya tiene, y traerlos obligaría a resolver dos
-   * uniones cada vez que se guarda.</p>
+   * <p>Las correspondencias se declaran una a una porque la entidad viaja anidada dentro de
+   * {@link RecurringTemplate}, junto a los tags. La plantilla no lleva el nombre de la
+   * categoría ni el código del tipo porque son catálogos que el cliente ya tiene, y traerlos
+   * obligaría a resolver dos uniones cada vez que se guarda.</p>
    *
-   * @param recurring plantilla tal y como quedó guardada
+   * @param template plantilla tal y como quedó guardada, junto a sus tags
    * @return la representación de la plantilla
    */
-  RecurringTransactionResponse toResponse(RecurringTransaction recurring);
+  @Mapping(target = "id", source = "recurring.id")
+  @Mapping(target = "categoryId", source = "recurring.categoryId")
+  @Mapping(target = "transactionTypeId", source = "recurring.transactionTypeId")
+  @Mapping(target = "description", source = "recurring.description")
+  @Mapping(target = "amount", source = "recurring.amount")
+  @Mapping(target = "dayOfMonth", source = "recurring.dayOfMonth")
+  @Mapping(target = "everyMonths", source = "recurring.everyMonths")
+  @Mapping(target = "startMonth", source = "recurring.startMonth")
+  @Mapping(target = "startYear", source = "recurring.startYear")
+  @Mapping(target = "active", source = "recurring.active")
+  @Mapping(target = "tags", source = "tags")
+  RecurringTransactionResponse toResponse(RecurringTemplate template);
 
   /**
    * Convierte un movimiento fijo resuelto contra un mes en su representación de respuesta.
@@ -53,6 +68,7 @@ public interface RecurringTransactionMapper {
   @Mapping(target = "startMonth", source = "recurring.recurringStartMonth")
   @Mapping(target = "startYear", source = "recurring.recurringStartYear")
   @Mapping(target = "active", source = "recurring.recurringActive")
+  @Mapping(target = "tags", source = "tags")
   @Mapping(target = "month", source = "recurring.recurringMonth")
   @Mapping(target = "year", source = "recurring.recurringYear")
   @Mapping(target = "dueDate", source = "dueDate")

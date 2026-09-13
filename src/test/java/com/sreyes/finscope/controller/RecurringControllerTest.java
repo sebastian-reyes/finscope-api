@@ -1,5 +1,6 @@
 package com.sreyes.finscope.controller;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -7,6 +8,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.reactive.server.SecurityMockServerConfigurers.csrf;
 import static org.springframework.security.test.web.reactive.server.SecurityMockServerConfigurers.mockUser;
 
+import com.sreyes.finscope.api.model.SaveRecurringTransactionRequest;
 import com.sreyes.finscope.config.TimeConfig;
 import com.sreyes.finscope.exception.custom.RecurringAlreadyConfirmedException;
 import com.sreyes.finscope.exception.custom.RecurringNotDueException;
@@ -15,16 +17,19 @@ import com.sreyes.finscope.model.entity.RecurringTransaction;
 import com.sreyes.finscope.model.query.RecurringDetail;
 import com.sreyes.finscope.model.query.RecurringOccurrence;
 import com.sreyes.finscope.model.query.RecurringState;
+import com.sreyes.finscope.model.query.RecurringTemplate;
 import com.sreyes.finscope.security.AuthenticatedUser;
 import com.sreyes.finscope.service.RecurringTransactionService;
 import com.sreyes.finscope.util.mapper.RecurringTransactionMapperImpl;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webflux.test.autoconfigure.WebFluxTest;
 import org.springframework.context.annotation.Import;
@@ -38,6 +43,10 @@ import reactor.core.publisher.Mono;
  * importa en lugar de simularse porque lo que se comprueba aquí es la forma del JSON que
  * sale de él: el estado y el día de vencimiento no vienen de ninguna tabla y son justo lo
  * que la pantalla usa para decidir qué pinta en rojo.
+ *
+ * Los tags también se comprueban aquí porque no salen de la entidad ni de la proyección:
+ * viajan aparte hasta el mapper, y un descuido ahí los dejaría fuera del JSON sin que nada
+ * fallara.
  */
 @WebFluxTest(RecurringController.class)
 @Import({TimeConfig.class, RecurringTransactionMapperImpl.class})
@@ -72,12 +81,14 @@ class RecurringControllerTest {
   }
 
   private RecurringOccurrence occurrence(RecurringState state, Long transactionId) {
-    return new RecurringOccurrence(detail(transactionId), LocalDate.of(2026, 8, 12), state);
+    return new RecurringOccurrence(detail(transactionId), LocalDate.of(2026, 8, 12), state,
+        List.of("casa", "teletrabajo"));
   }
 
-  private RecurringTransaction template() {
-    return new RecurringTransaction(RECURRING_ID, USER_ID, CATEGORY_ID, TYPE_ID, "Internet",
-        new BigDecimal("180.00"), 12, 1, 8, 2026, true);
+  private RecurringTemplate template() {
+    RecurringTransaction recurring = new RecurringTransaction(RECURRING_ID, USER_ID, CATEGORY_ID,
+        TYPE_ID, "Internet", new BigDecimal("180.00"), 12, 1, 8, 2026, true);
+    return new RecurringTemplate(recurring, List.of("casa", "teletrabajo"));
   }
 
   @Test
@@ -102,6 +113,10 @@ class RecurringControllerTest {
         .jsonPath("$[0].year").isEqualTo(2026)
         .jsonPath("$[0].dueDate").isEqualTo("2026-08-12")
         .jsonPath("$[0].status").isEqualTo("OVERDUE")
+        // Los tags son el contexto que la categoría no puede dar: esta es una y se solapan.
+        .jsonPath("$[0].tags.length()").isEqualTo(2)
+        .jsonPath("$[0].tags[0]").isEqualTo("casa")
+        .jsonPath("$[0].tags[1]").isEqualTo("teletrabajo")
         .jsonPath("$[0].transactionId").doesNotExist();
 
     verify(recurringTransactionService).findRecurring(USER_ID, 8, 2026);
@@ -148,8 +163,39 @@ class RecurringControllerTest {
         .jsonPath("$.description").isEqualTo("Internet")
         .jsonPath("$.everyMonths").isEqualTo(1)
         .jsonPath("$.active").isEqualTo(true)
+        .jsonPath("$.tags[0]").isEqualTo("casa")
         // La plantilla no mira ningún mes, así que no lleva estado.
         .jsonPath("$.status").doesNotExist();
+  }
+
+  @Test
+  @DisplayName("Los tags del cuerpo llegan al servicio al dar de alta un fijo")
+  void passesTagsOnCreate() {
+    when(recurringTransactionService.createRecurring(eq(USER_ID), any()))
+        .thenReturn(Mono.just(template()));
+    ArgumentCaptor<SaveRecurringTransactionRequest> captor =
+        ArgumentCaptor.forClass(SaveRecurringTransactionRequest.class);
+
+    webTestClient.post().uri("/recurring-transactions")
+        .bodyValue(Map.of("categoryId", 4, "transactionTypeId", 2, "description", "Internet",
+            "amount", 180.00, "dayOfMonth", 12, "startMonth", 8, "startYear", 2026,
+            "tags", List.of("casa", "teletrabajo")))
+        .exchange()
+        .expectStatus().isCreated();
+
+    verify(recurringTransactionService).createRecurring(eq(USER_ID), captor.capture());
+    assertEquals(List.of("casa", "teletrabajo"), captor.getValue().getTags());
+  }
+
+  @Test
+  @DisplayName("Rechaza un tag vacío, que no llegaría a descartarse")
+  void rejectsBlankTag() {
+    webTestClient.post().uri("/recurring-transactions")
+        .bodyValue(Map.of("categoryId", 4, "transactionTypeId", 2, "description", "Internet",
+            "amount", 180.00, "dayOfMonth", 12, "startMonth", 8, "startYear", 2026,
+            "tags", List.of("")))
+        .exchange()
+        .expectStatus().isBadRequest();
   }
 
   @Test

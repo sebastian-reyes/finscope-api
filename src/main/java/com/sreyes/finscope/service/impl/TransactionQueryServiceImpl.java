@@ -20,7 +20,7 @@ import com.sreyes.finscope.service.TransactionQueryService;
 import com.sreyes.finscope.util.constants.Constants;
 import com.sreyes.finscope.util.mapper.TransactionMapper;
 import com.sreyes.finscope.util.query.DateRanges;
-import java.util.Comparator;
+import com.sreyes.finscope.util.rules.TagRules;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -217,21 +217,8 @@ public class TransactionQueryServiceImpl implements TransactionQueryService {
                 transaction,
                 references.getT1().get(transaction.getTransactionTypeId()),
                 references.getT2().get(transaction.getCategoryId()),
-                sortedTags(references.getT3().get(transaction.getId()))))
+                TagRules.sorted(references.getT3().get(transaction.getId()))))
             .toList());
-  }
-
-  /**
-   * Ordena alfabéticamente los tags de una transacción, sin distinguir mayúsculas, para
-   * que el cliente los reciba siempre en el mismo orden.
-   *
-   * @param tags tags de la transacción, nulo si no tiene ninguno
-   * @return los tags ordenados
-   */
-  private List<String> sortedTags(List<String> tags) {
-    return tags == null
-        ? List.of()
-        : tags.stream().sorted(Comparator.comparing(String::toLowerCase)).toList();
   }
 
   /**

@@ -3,6 +3,7 @@ package com.sreyes.finscope.service.impl;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -19,21 +20,28 @@ import com.sreyes.finscope.exception.custom.RecurringNotDueException;
 import com.sreyes.finscope.exception.custom.RecurringNotFoundException;
 import com.sreyes.finscope.exception.custom.RecurringSkippedException;
 import com.sreyes.finscope.model.entity.Category;
+import com.sreyes.finscope.model.entity.RecurringTag;
 import com.sreyes.finscope.model.entity.RecurringTransaction;
+import com.sreyes.finscope.model.entity.Tag;
 import com.sreyes.finscope.model.entity.Transaction;
 import com.sreyes.finscope.model.entity.TransactionType;
 import com.sreyes.finscope.model.query.RecurringDetail;
 import com.sreyes.finscope.model.query.RecurringState;
+import com.sreyes.finscope.model.query.RecurringTagName;
 import com.sreyes.finscope.repository.CategoryRepository;
 import com.sreyes.finscope.repository.RecurringSkipRepository;
+import com.sreyes.finscope.repository.RecurringTagRepository;
 import com.sreyes.finscope.repository.RecurringTransactionRepository;
+import com.sreyes.finscope.repository.TagRepository;
 import com.sreyes.finscope.repository.TransactionRepository;
+import com.sreyes.finscope.repository.TransactionTagRepository;
 import com.sreyes.finscope.repository.TransactionTypeRepository;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -56,6 +64,10 @@ import reactor.test.StepVerifier;
  * El reloj está fijado a propósito. La única diferencia entre un pendiente y un vencido es
  * qué día es hoy, así que con el reloj del sistema estas pruebas empezarían a decir cosas
  * distintas según la fecha en que se ejecutaran.
+ *
+ * Los tags entran aquí porque su copia al confirmar es invisible: si no se copiaran, todo
+ * seguiría respondiendo lo mismo y el movimiento entraría al historial sin contexto, que es
+ * exactamente el fallo que había antes de que la plantilla los llevara.
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -79,7 +91,13 @@ class RecurringTransactionServiceImplTest {
   private RecurringSkipRepository recurringSkipRepository;
 
   @Mock
+  private RecurringTagRepository recurringTagRepository;
+
+  @Mock
   private TransactionRepository transactionRepository;
+
+  @Mock
+  private TransactionTagRepository transactionTagRepository;
 
   @Mock
   private TransactionTypeRepository transactionTypeRepository;
@@ -87,13 +105,21 @@ class RecurringTransactionServiceImplTest {
   @Mock
   private CategoryRepository categoryRepository;
 
+  @Mock
+  private TagRepository tagRepository;
+
   private RecurringTransactionServiceImpl recurringService;
 
   @BeforeEach
   void setUp() {
     recurringService = new RecurringTransactionServiceImpl(recurringRepository,
-        recurringSkipRepository, transactionRepository, transactionTypeRepository,
-        categoryRepository, CLOCK);
+        recurringSkipRepository, recurringTagRepository, transactionRepository,
+        transactionTagRepository, transactionTypeRepository, categoryRepository, tagRepository,
+        CLOCK);
+    // Por defecto los fijos no llevan tags: cada prueba que los necesite los pone.
+    when(tagRepository.findNamesByRecurringIdIn(any())).thenReturn(Flux.empty());
+    when(recurringTagRepository.deleteByRecurringId(any())).thenReturn(Mono.empty());
+    when(transactionTagRepository.copyFromRecurring(any(), any())).thenReturn(Mono.just(0L));
   }
 
   /** Categoría de egresos, la que clasifica el internet. */
@@ -396,9 +422,85 @@ class RecurringTransactionServiceImplTest {
     request.setActive(false);
 
     StepVerifier.create(recurringService.updateRecurring(USER_ID, RECURRING_ID, request))
-        .assertNext(updated -> assertEquals(false, updated.getActive()))
+        .assertNext(updated -> assertEquals(false, updated.recurring().getActive()))
         .verifyComplete();
 
     verify(transactionRepository, never()).save(any(Transaction.class));
+    // Pausar manda solo `active`: los tags que tuviera no se tocan.
+    verify(recurringTagRepository, never()).deleteByRecurringId(any());
+  }
+
+  @Test
+  @DisplayName("Al confirmar un mes, los tags de la plantilla pasan al movimiento")
+  void copiesTheTemplateTagsToTheTransaction() {
+    givenDetail(detail(12, true, false, null), detail(12, true, false, 99L));
+    when(transactionRepository.save(any(Transaction.class))).thenAnswer(call -> {
+      Transaction transaction = call.getArgument(0);
+      transaction.setId(99L);
+      return Mono.just(transaction);
+    });
+
+    StepVerifier.create(recurringService.confirmRecurring(USER_ID, RECURRING_ID,
+        new ConfirmRecurringTransactionRequest(MONTH, YEAR)))
+        .expectNextCount(1)
+        .verifyComplete();
+
+    // Sin esta copia el gasto más previsible del mes era justo el que faltaba en el
+    // desglose por tag, y no había forma de notarlo desde la pantalla de fijos.
+    verify(transactionTagRepository).copyFromRecurring(99L, RECURRING_ID);
+  }
+
+  @Test
+  @DisplayName("Dar de alta un fijo con tags los deja enlazados y devuelve la grafía guardada")
+  void linksTheTagsOfANewRecurring() {
+    when(transactionTypeRepository.findById(TYPE_ID)).thenReturn(Mono.just(expense()));
+    when(categoryRepository.findByIdAndUserId(CATEGORY_ID, USER_ID))
+        .thenReturn(Mono.just(servicios()));
+    when(recurringRepository.save(any(RecurringTransaction.class))).thenAnswer(call -> {
+      RecurringTransaction saved = call.getArgument(0);
+      saved.setId(RECURRING_ID);
+      return Mono.just(saved);
+    });
+    when(tagRepository.insertIfAbsent(eq(USER_ID), any())).thenReturn(Mono.just(1L));
+    when(tagRepository.findByUserIdAndLowerNameIn(eq(USER_ID), any()))
+        .thenReturn(Flux.just(new Tag(30L, USER_ID, "Casa")));
+    when(recurringTagRepository.saveAll(anyList()))
+        .thenAnswer(call -> Flux.fromIterable(call.getArgument(0)));
+    // El catálogo manda: se escribió `casa` y lo que se guardó fue el `Casa` que ya existía.
+    when(tagRepository.findNamesByRecurringIdIn(any()))
+        .thenReturn(Flux.just(new RecurringTagName(RECURRING_ID, "Casa")));
+
+    SaveRecurringTransactionRequest request = new SaveRecurringTransactionRequest(CATEGORY_ID,
+        TYPE_ID, "Internet", new BigDecimal("180.00"), 12, 8, 2026);
+    request.setTags(List.of("casa", " casa ", ""));
+
+    StepVerifier.create(recurringService.createRecurring(USER_ID, request))
+        .assertNext(template -> assertEquals(List.of("Casa"), template.tags()))
+        .verifyComplete();
+
+    ArgumentCaptor<List<RecurringTag>> links = ArgumentCaptor.captor();
+    verify(recurringTagRepository).saveAll(links.capture());
+    // Los repetidos y los vacíos se descartan antes de escribir: queda un solo enlace.
+    assertEquals(1, links.getValue().size());
+    assertEquals(30L, links.getValue().getFirst().getTagId());
+  }
+
+  @Test
+  @DisplayName("Guardar una lista de tags vacía deja el fijo sin ninguno")
+  void clearsTheTagsWithAnEmptyList() {
+    when(recurringRepository.findByIdAndUserId(RECURRING_ID, USER_ID))
+        .thenReturn(Mono.just(recurring()));
+    when(recurringRepository.save(any(RecurringTransaction.class)))
+        .thenAnswer(call -> Mono.just(call.getArgument(0)));
+
+    UpdateRecurringTransactionRequest request = new UpdateRecurringTransactionRequest();
+    request.setTags(List.of());
+
+    StepVerifier.create(recurringService.updateRecurring(USER_ID, RECURRING_ID, request))
+        .assertNext(template -> assertEquals(List.of(), template.tags()))
+        .verifyComplete();
+
+    verify(recurringTagRepository).deleteByRecurringId(RECURRING_ID);
+    verify(recurringTagRepository, never()).saveAll(anyList());
   }
 }

@@ -9,6 +9,7 @@ import com.sreyes.finscope.exception.custom.TagNameAlreadyUsedException;
 import com.sreyes.finscope.exception.custom.TagNotFoundException;
 import com.sreyes.finscope.model.entity.Tag;
 import com.sreyes.finscope.model.query.TagUsage;
+import com.sreyes.finscope.repository.RecurringTagRepository;
 import com.sreyes.finscope.repository.TagRepository;
 import com.sreyes.finscope.repository.TransactionTagRepository;
 import org.junit.jupiter.api.DisplayName;
@@ -39,6 +40,9 @@ class TagServiceImplTest {
 
   @Mock
   private TransactionTagRepository transactionTagRepository;
+
+  @Mock
+  private RecurringTagRepository recurringTagRepository;
 
   @InjectMocks
   private TagServiceImpl tagService;
@@ -160,16 +164,19 @@ class TagServiceImplTest {
   }
 
   @Test
-  @DisplayName("Al borrar un tag lo retira antes de las transacciones que lo llevan")
+  @DisplayName("Al borrar un tag lo retira de las transacciones y de los fijos que lo llevan")
   void deletesTagAndItsRelations() {
     Tag existing = tag("ocio");
     when(tagRepository.findByIdAndUserId(TAG_ID, USER_ID)).thenReturn(Mono.just(existing));
     when(transactionTagRepository.deleteByTagId(TAG_ID)).thenReturn(Mono.empty());
+    when(recurringTagRepository.deleteByTagId(TAG_ID)).thenReturn(Mono.empty());
     when(tagRepository.delete(existing)).thenReturn(Mono.empty());
 
     StepVerifier.create(tagService.deleteTag(USER_ID, TAG_ID)).verifyComplete();
 
     verify(transactionTagRepository).deleteByTagId(TAG_ID);
+    // Un fijo que lo llevaba sobrevive: solo deja de copiarlo al confirmar cada mes.
+    verify(recurringTagRepository).deleteByTagId(TAG_ID);
     verify(tagRepository).delete(existing);
   }
 

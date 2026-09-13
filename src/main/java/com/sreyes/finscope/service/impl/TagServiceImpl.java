@@ -4,6 +4,7 @@ import com.sreyes.finscope.exception.custom.TagNameAlreadyUsedException;
 import com.sreyes.finscope.exception.custom.TagNotFoundException;
 import com.sreyes.finscope.model.entity.Tag;
 import com.sreyes.finscope.model.query.TagUsage;
+import com.sreyes.finscope.repository.RecurringTagRepository;
 import com.sreyes.finscope.repository.TagRepository;
 import com.sreyes.finscope.repository.TransactionTagRepository;
 import com.sreyes.finscope.service.TagService;
@@ -27,6 +28,7 @@ public class TagServiceImpl implements TagService {
 
   private final TagRepository tagRepository;
   private final TransactionTagRepository transactionTagRepository;
+  private final RecurringTagRepository recurringTagRepository;
 
   @Override
   public Flux<TagUsage> findTags(Long userId) {
@@ -56,10 +58,18 @@ public class TagServiceImpl implements TagService {
         .flatMap(this::toUsage);
   }
 
+  /**
+   * {@inheritDoc}
+   *
+   * <p>Se retiran antes los dos enlaces que puede tener: el de las transacciones que lo
+   * llevan y el de los movimientos fijos que lo copiarán al confirmarse. Ni unas ni otros
+   * desaparecen, solo dejan de estar clasificados por él.</p>
+   */
   @Override
   public Mono<Void> deleteTag(Long userId, Long id) {
     return requireTag(userId, id)
         .flatMap(tag -> transactionTagRepository.deleteByTagId(tag.getId())
+            .then(recurringTagRepository.deleteByTagId(tag.getId()))
             .then(tagRepository.delete(tag)));
   }
 

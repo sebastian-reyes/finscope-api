@@ -11,6 +11,7 @@ import com.sreyes.finscope.exception.custom.RecurringNotDueException;
 import com.sreyes.finscope.exception.custom.RecurringNotFoundException;
 import com.sreyes.finscope.exception.custom.RecurringSkippedException;
 import com.sreyes.finscope.exception.custom.TransactionTypeNotFoundException;
+import com.sreyes.finscope.model.entity.RecurringTag;
 import com.sreyes.finscope.model.entity.RecurringTransaction;
 import com.sreyes.finscope.model.entity.Transaction;
 import com.sreyes.finscope.model.entity.TransactionType;
@@ -18,20 +19,29 @@ import com.sreyes.finscope.model.query.DateRange;
 import com.sreyes.finscope.model.query.RecurringDetail;
 import com.sreyes.finscope.model.query.RecurringOccurrence;
 import com.sreyes.finscope.model.query.RecurringState;
+import com.sreyes.finscope.model.query.RecurringTagName;
+import com.sreyes.finscope.model.query.RecurringTemplate;
 import com.sreyes.finscope.repository.CategoryRepository;
 import com.sreyes.finscope.repository.RecurringSkipRepository;
+import com.sreyes.finscope.repository.RecurringTagRepository;
 import com.sreyes.finscope.repository.RecurringTransactionRepository;
+import com.sreyes.finscope.repository.TagRepository;
 import com.sreyes.finscope.repository.TransactionRepository;
+import com.sreyes.finscope.repository.TransactionTagRepository;
 import com.sreyes.finscope.repository.TransactionTypeRepository;
 import com.sreyes.finscope.service.RecurringTransactionService;
 import com.sreyes.finscope.util.constants.Constants;
 import com.sreyes.finscope.util.patch.Patches;
 import com.sreyes.finscope.util.query.DateRanges;
 import com.sreyes.finscope.util.rules.CategoryRules;
+import com.sreyes.finscope.util.rules.TagRules;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
@@ -53,6 +63,11 @@ import reactor.core.publisher.Mono;
  * El mes se traduce a un rango de fechas con {@link DateRanges}, el mismo que usan el
  * listado, los resúmenes y los presupuestos. Es lo que garantiza que el alquiler de
  * septiembre signifique lo mismo en la lista de fijos que en el gráfico del mes.
+ *
+ * Los tags viven en la plantilla y se copian al movimiento al confirmar, igual que el
+ * importe y la descripción. La copia va de identificador a identificador contra el mismo
+ * catálogo del usuario, sin pasar por los nombres: así el movimiento queda clasificado
+ * exactamente con los tags del fijo, y renombrar uno después arrastra a los dos por igual.
  */
 @Service
 @RequiredArgsConstructor
@@ -60,40 +75,77 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
 
   private final RecurringTransactionRepository recurringRepository;
   private final RecurringSkipRepository recurringSkipRepository;
+  private final RecurringTagRepository recurringTagRepository;
   private final TransactionRepository transactionRepository;
+  private final TransactionTagRepository transactionTagRepository;
   private final TransactionTypeRepository transactionTypeRepository;
   private final CategoryRepository categoryRepository;
+  private final TagRepository tagRepository;
   private final Clock clock;
 
+  /**
+   * {@inheritDoc}
+   *
+   * <p>Los tags de toda la lista se cargan en una sola consulta, igual que los de una página
+   * de transacciones: la pantalla enseña todas las plantillas del usuario y preguntarlos fila
+   * a fila sería una consulta por fijo.</p>
+   */
   @Override
   public Flux<RecurringOccurrence> findRecurring(Long userId, Integer month, Integer year) {
     return resolveMonth(month, year)
-        .flatMapMany(range -> recurringRepository.findDetailsByPeriod(userId, month, year,
-            range.from(), range.to()))
-        .map(this::toOccurrence);
-  }
-
-  @Override
-  public Mono<RecurringTransaction> createRecurring(Long userId,
-                                                    SaveRecurringTransactionRequest request) {
-    return requireUsablePair(userId, request.getCategoryId(), request.getTransactionTypeId())
-        .then(Mono.defer(() -> recurringRepository.save(toEntity(userId, request))));
-  }
-
-  @Override
-  public Mono<RecurringTransaction> updateRecurring(Long userId, Long id,
-                                                    UpdateRecurringTransactionRequest request) {
-    return requireRecurring(userId, id)
-        .flatMap(recurring -> requireValidReferences(userId, recurring, request)
-            .thenReturn(applyChanges(recurring, request)))
-        .flatMap(recurringRepository::save);
+        .flatMap(range -> recurringRepository.findDetailsByPeriod(userId, month, year,
+                range.from(), range.to())
+            .collectList())
+        .flatMap(this::toOccurrences)
+        .flatMapMany(Flux::fromIterable);
   }
 
   /**
    * {@inheritDoc}
    *
-   * <p>Las omisiones se van con la plantilla por la clave foránea en cascada. Los
-   * movimientos no: solo pierden el enlace, porque ocurrieron igual.</p>
+   * <p>Los tags se escriben después de la plantilla porque el enlace necesita su
+   * identificador, y se vuelven a leer antes de responder: si el usuario escribió `casa`
+   * teniendo ya un `Casa`, lo que se guardó es el que ya existía y es esa grafía la que
+   * tiene que ver de vuelta.</p>
+   */
+  @Override
+  public Mono<RecurringTemplate> createRecurring(Long userId,
+                                                 SaveRecurringTransactionRequest request) {
+    List<String> tags = TagRules.normalize(request.getTags());
+    return requireUsablePair(userId, request.getCategoryId(), request.getTransactionTypeId())
+        .then(Mono.defer(() -> recurringRepository.save(toEntity(userId, request))))
+        .flatMap(saved -> replaceTags(userId, saved.getId(), tags).thenReturn(saved))
+        .flatMap(this::toTemplate);
+  }
+
+  /**
+   * {@inheritDoc}
+   *
+   * <p>Los tags solo se tocan si la petición los trae. Es lo que permite que pausar un fijo
+   * —que manda únicamente `active`— no le borre los que tiene, y que una lista vacía siga
+   * significando dejarlo sin ninguno.</p>
+   */
+  @Override
+  public Mono<RecurringTemplate> updateRecurring(Long userId, Long id,
+                                                 UpdateRecurringTransactionRequest request) {
+    List<String> tags = TagRules.normalize(request.getTags());
+    return requireRecurring(userId, id)
+        .flatMap(recurring -> requireValidReferences(userId, recurring, request)
+            .thenReturn(applyChanges(recurring, request)))
+        .flatMap(recurringRepository::save)
+        .flatMap(saved -> request.getTags() == null
+            ? Mono.just(saved)
+            : replaceTags(userId, saved.getId(), tags).thenReturn(saved))
+        .flatMap(this::toTemplate);
+  }
+
+  /**
+   * {@inheritDoc}
+   *
+   * <p>Las omisiones y los enlaces con sus tags se van con la plantilla por la clave foránea
+   * en cascada; los tags en sí siguen en el catálogo del usuario. Los movimientos no se van:
+   * solo pierden el enlace, porque ocurrieron igual, y conservan los tags con los que se
+   * registraron.</p>
    */
   @Override
   public Mono<Void> deleteRecurring(Long userId, Long id) {
@@ -106,6 +158,11 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
    * <p>Se vuelve a leer el detalle después de escribir, en lugar de componer la respuesta
    * con lo que se acaba de guardar, para que confirmar devuelva exactamente la misma forma
    * que devolvería listar ese mes justo después.</p>
+   *
+   * <p>Los tags de la plantilla se copian al movimiento en el mismo paso. Es lo que hace que
+   * el alquiler entre al historial clasificado como si se hubiera registrado a mano: sin
+   * esto, el gasto más previsible del mes era justo el que se quedaba fuera del desglose por
+   * tag.</p>
    */
   @Override
   public Mono<RecurringOccurrence> confirmRecurring(Long userId, Long id,
@@ -116,9 +173,11 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
         .flatMap(range -> requireDetail(userId, id, month, year, range)
             .flatMap(detail -> requireConfirmable(detail)
                 .then(Mono.defer(() -> transactionRepository.save(
-                    toTransaction(userId, detail, request, range)))))
+                    toTransaction(userId, detail, request, range))))
+                .flatMap(saved -> transactionTagRepository.copyFromRecurring(saved.getId(),
+                    detail.recurringId())))
             .then(Mono.defer(() -> requireDetail(userId, id, month, year, range)))
-            .map(this::toOccurrence));
+            .flatMap(this::toOccurrence));
   }
 
   @Override
@@ -129,7 +188,7 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
             .flatMap(detail -> requireSkippable(detail)
                 .then(Mono.defer(() -> recurringSkipRepository.insertIfAbsent(id, month, year))))
             .then(Mono.defer(() -> requireDetail(userId, id, month, year, range)))
-            .map(this::toOccurrence));
+            .flatMap(this::toOccurrence));
   }
 
   /**
@@ -146,7 +205,7 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
         .flatMap(range -> requireDetail(userId, id, month, year, range)
             .then(Mono.defer(() -> recurringSkipRepository.deleteByPeriod(id, month, year)))
             .then(Mono.defer(() -> requireDetail(userId, id, month, year, range)))
-            .map(this::toOccurrence));
+            .flatMap(this::toOccurrence));
   }
 
   /**
@@ -160,23 +219,109 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
    * entra la única pregunta que necesita saber qué día es hoy.</p>
    *
    * @param detail plantilla y hechos del mes tal y como los devolvió la consulta
+   * @param tags   tags de la plantilla, ya ordenados
    * @return la plantilla resuelta contra ese mes
    */
-  private RecurringOccurrence toOccurrence(RecurringDetail detail) {
+  private RecurringOccurrence toOccurrence(RecurringDetail detail, List<String> tags) {
     LocalDate dueDate = dueDate(detail);
     if (detail.recurringTransactionId() != null) {
-      return new RecurringOccurrence(detail, dueDate, RecurringState.PAID);
+      return new RecurringOccurrence(detail, dueDate, RecurringState.PAID, tags);
     }
     if (!Boolean.TRUE.equals(detail.recurringDue())) {
-      return new RecurringOccurrence(detail, null, RecurringState.NOT_DUE);
+      return new RecurringOccurrence(detail, null, RecurringState.NOT_DUE, tags);
     }
     if (Boolean.TRUE.equals(detail.recurringSkipped())) {
-      return new RecurringOccurrence(detail, dueDate, RecurringState.SKIPPED);
+      return new RecurringOccurrence(detail, dueDate, RecurringState.SKIPPED, tags);
     }
     RecurringState state = dueDate.isBefore(LocalDate.now(clock))
         ? RecurringState.OVERDUE
         : RecurringState.PENDING;
-    return new RecurringOccurrence(detail, dueDate, state);
+    return new RecurringOccurrence(detail, dueDate, state, tags);
+  }
+
+  /**
+   * Resuelve una plantilla contra su mes cargando antes sus tags.
+   * Es el camino de las operaciones que devuelven un solo fijo —confirmar, omitir,
+   * deshacer—, para que respondan con la misma forma con la que después se lista el mes.
+   *
+   * @param detail plantilla y hechos del mes tal y como los devolvió la consulta
+   * @return la plantilla resuelta contra ese mes, con sus tags
+   */
+  private Mono<RecurringOccurrence> toOccurrence(RecurringDetail detail) {
+    return findTags(detail.recurringId()).map(tags -> toOccurrence(detail, tags));
+  }
+
+  /**
+   * Resuelve toda la lista de un mes cargando los tags de sus plantillas en una sola
+   * consulta.
+   * Se conserva el orden que trajo la consulta, que es el del calendario: así se lee un
+   * checklist, y reordenarlo aquí lo desharía.
+   *
+   * @param details plantillas y hechos del mes tal y como los devolvió la consulta
+   * @return las plantillas resueltas contra ese mes, con sus tags
+   */
+  private Mono<List<RecurringOccurrence>> toOccurrences(List<RecurringDetail> details) {
+    if (details.isEmpty()) {
+      return Mono.just(List.of());
+    }
+    Set<Long> ids = details.stream()
+        .map(RecurringDetail::recurringId)
+        .collect(Collectors.toSet());
+    return tagRepository.findNamesByRecurringIdIn(ids)
+        .collect(Collectors.groupingBy(RecurringTagName::recurringId,
+            Collectors.mapping(RecurringTagName::tagName, Collectors.toList())))
+        .map(byRecurring -> details.stream()
+            .map(detail -> toOccurrence(detail,
+                TagRules.sorted(byRecurring.get(detail.recurringId()))))
+            .toList());
+  }
+
+  /**
+   * Completa la plantilla guardada con sus tags para devolverla.
+   * Se leen de la base en lugar de reutilizar lo que llegó en la petición porque el catálogo
+   * manda: un `casa` escrito sobre un `Casa` previo reutiliza el que ya existía, y es esa
+   * grafía la que el cliente tiene que ver.
+   *
+   * @param recurring plantilla tal y como quedó guardada
+   * @return la plantilla junto a sus tags
+   */
+  private Mono<RecurringTemplate> toTemplate(RecurringTransaction recurring) {
+    return findTags(recurring.getId()).map(tags -> new RecurringTemplate(recurring, tags));
+  }
+
+  /**
+   * Obtiene los tags de una plantilla, en orden alfabético.
+   *
+   * @param recurringId identificador de la plantilla
+   * @return los nombres de sus tags, vacío si no lleva ninguno
+   */
+  private Mono<List<String>> findTags(Long recurringId) {
+    return tagRepository.findNamesByRecurringIdIn(List.of(recurringId))
+        .map(RecurringTagName::tagName)
+        .collectList()
+        .map(TagRules::sorted);
+  }
+
+  /**
+   * Reemplaza por completo los tags de una plantilla.
+   * Se rehacen los enlaces, no los tags: los que el usuario deja de usar siguen en su
+   * catálogo, de modo que conservan su identificador y su grafía si vuelve a escribirlos.
+   * Es el mismo reemplazo que en las transacciones, y con el mismo catálogo detrás.
+   *
+   * @param userId      identificador del usuario propietario
+   * @param recurringId identificador de la plantilla
+   * @param names       nombres de tag ya normalizados
+   * @return Mono vacío al completar el reemplazo
+   */
+  private Mono<Void> replaceTags(Long userId, Long recurringId, List<String> names) {
+    return recurringTagRepository.deleteByRecurringId(recurringId)
+        .then(Mono.defer(() -> names.isEmpty()
+            ? Mono.empty()
+            : TagRules.resolveIds(tagRepository, userId, names)
+                .flatMapMany(tagIds -> recurringTagRepository.saveAll(tagIds.stream()
+                    .map(tagId -> new RecurringTag(null, recurringId, tagId))
+                    .toList()))
+                .then()));
   }
 
   /**
