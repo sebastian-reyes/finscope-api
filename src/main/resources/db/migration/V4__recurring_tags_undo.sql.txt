@@ -1,0 +1,14 @@
+-- Reverso de V4__recurring_tags.sql.
+--
+-- No lo aplica Flyway: se guarda con extension .txt a proposito para que no lo tome por
+-- una migracion. Es para deshacer a mano los tags de los movimientos fijos si hiciera
+-- falta volver atras.
+--
+-- Se van los enlaces de las plantillas, no los tags: el catalogo del usuario y los tags de
+-- las transacciones ya registradas no tienen nada que ver con esto y siguen en su sitio.
+-- Los movimientos que se confirmaron con tags los conservan, porque los llevan en
+-- `transaction_tags` como cualquier otro.
+
+DROP INDEX IF EXISTS idx_recurring_tags_tag;
+
+DROP TABLE IF EXISTS recurring_tags;

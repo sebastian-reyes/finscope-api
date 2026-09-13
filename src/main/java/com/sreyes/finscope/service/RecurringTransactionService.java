@@ -3,8 +3,8 @@ package com.sreyes.finscope.service;
 import com.sreyes.finscope.api.model.ConfirmRecurringTransactionRequest;
 import com.sreyes.finscope.api.model.SaveRecurringTransactionRequest;
 import com.sreyes.finscope.api.model.UpdateRecurringTransactionRequest;
-import com.sreyes.finscope.model.entity.RecurringTransaction;
 import com.sreyes.finscope.model.query.RecurringOccurrence;
+import com.sreyes.finscope.model.query.RecurringTemplate;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -21,6 +21,11 @@ import reactor.core.publisher.Mono;
  *
  * El servicio no genera movimientos por su cuenta: la transacción solo aparece cuando el
  * usuario confirma un mes.
+ *
+ * Los tags de un fijo viven en la plantilla, no en cada mes: se escriben una vez y se copian
+ * al movimiento cada vez que se confirma. Es lo que permite que el alquiler entre al
+ * historial con el mismo contexto que si se hubiera registrado a mano, sin tener que
+ * escribirlo doce veces al año.
  */
 public interface RecurringTransactionService {
 
@@ -43,23 +48,23 @@ public interface RecurringTransactionService {
    *
    * @param userId  identificador del usuario propietario
    * @param request datos de la plantilla a crear
-   * @return la plantilla creada
+   * @return la plantilla creada, con sus tags
    */
-  Mono<RecurringTransaction> createRecurring(Long userId,
-                                             SaveRecurringTransactionRequest request);
+  Mono<RecurringTemplate> createRecurring(Long userId,
+                                          SaveRecurringTransactionRequest request);
 
   /**
    * Modifica un movimiento fijo. Solo se aplican los campos informados.
    * El cambio rige de aquí en adelante: los movimientos ya confirmados con esta plantilla
-   * son hechos y no se recalculan.
+   * son hechos y no se recalculan, tampoco sus tags.
    *
    * @param userId  identificador del usuario propietario
    * @param id      identificador de la plantilla
    * @param request datos a actualizar
-   * @return la plantilla actualizada
+   * @return la plantilla actualizada, con sus tags
    */
-  Mono<RecurringTransaction> updateRecurring(Long userId, Long id,
-                                             UpdateRecurringTransactionRequest request);
+  Mono<RecurringTemplate> updateRecurring(Long userId, Long id,
+                                          UpdateRecurringTransactionRequest request);
 
   /**
    * Elimina un movimiento fijo y sus omisiones.

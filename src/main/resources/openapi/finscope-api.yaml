@@ -34,7 +34,7 @@ info:
     Todos los recursos financieros pertenecen al usuario autenticado y estan aislados
     entre usuarios. Salvo los endpoints de autenticacion, todas las operaciones exigen
     un token de acceso.
-  version: 6.3.0
+  version: 6.4.0
 servers:
   - url: /
     description: Servidor local
@@ -1865,7 +1865,7 @@ components:
         estado depende del mes que se mire. Para verla dentro de uno hay que listar ese mes.
       required:
         [id, categoryId, transactionTypeId, description, amount, dayOfMonth, everyMonths,
-         startMonth, startYear, active]
+         startMonth, startYear, active, tags]
       properties:
         id:
           type: integer
@@ -1918,6 +1918,15 @@ components:
             Un fijo pausado no vence en ningun mes ni compromete presupuesto, pero conserva
             los meses en los que si se pago. Es lo que hay que usar al dejar de pagar algo,
             en lugar de borrarlo.
+        tags:
+          type: array
+          description: |
+            Tags de la plantilla, en orden alfabetico. Son el contexto que la categoria no
+            puede dar: la categoria es una y reparte el gasto, y los tags se solapan.
+            Se copian al movimiento cada vez que se confirma un mes, de modo que el
+            historial sale clasificado igual que si se hubiera registrado a mano.
+          items:
+            type: string
 
     RecurringOccurrenceResponse:
       type: object
@@ -1929,7 +1938,7 @@ components:
         de fijos sin saber cuales faltan no es un checklist, es un catalogo.
       required:
         [id, categoryId, category, transactionTypeId, type, description, amount,
-         dayOfMonth, everyMonths, startMonth, startYear, active, month, year, status]
+         dayOfMonth, everyMonths, startMonth, startYear, active, tags, month, year, status]
       properties:
         id:
           type: integer
@@ -1988,6 +1997,11 @@ components:
           type: string
           format: date-time
           description: Fecha del movimiento con el que se confirmo
+        tags:
+          type: array
+          description: Tags de la plantilla, en orden alfabetico
+          items:
+            type: string
 
     SaveRecurringTransactionRequest:
       type: object
@@ -2029,6 +2043,19 @@ components:
           type: integer
           minimum: 1970
           maximum: 9999
+        tags:
+          type: array
+          description: |
+            Tags de texto libre que llevara el movimiento cada vez que se confirme un mes.
+            Se normalizan igual que en las transacciones: se recortan los espacios, se
+            descartan los que quedan en blanco y los repetidos se ignoran sin distinguir
+            mayusculas. Si el usuario ya tiene el tag escrito de otra forma se reutiliza el
+            existente, asi que `casa` sobre un `Casa` previo devuelve `Casa`.
+          maxItems: 20
+          items:
+            type: string
+            minLength: 1
+            maxLength: 70
 
     UpdateRecurringTransactionRequest:
       type: object
@@ -2068,6 +2095,17 @@ components:
           maximum: 9999
         active:
           type: boolean
+        tags:
+          type: array
+          description: |
+            Si esta presente reemplaza por completo los tags de la plantilla. Una lista
+            vacia la deja sin ninguno. Los meses ya confirmados no se recalculan: sus
+            movimientos conservan los tags con los que se registraron.
+          maxItems: 20
+          items:
+            type: string
+            minLength: 1
+            maxLength: 70
 
     ConfirmRecurringTransactionRequest:
       type: object
