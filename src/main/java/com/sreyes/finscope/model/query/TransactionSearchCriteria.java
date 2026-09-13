@@ -17,6 +17,7 @@ import java.time.LocalDateTime;
  * @param tag               nombre del tag asociado, sin distinguir mayúsculas
  * @param search            texto a buscar en la descripción, la categoría y los tags, sin
  *                          distinguir mayúsculas
+ * @param currency          moneda del movimiento, nula para no acotar por ella
  * @param page              número de página, empezando en cero
  * @param size              cantidad de elementos por página
  * @param sort              criterio de ordenamiento con formato campo,direccion
@@ -30,6 +31,7 @@ public record TransactionSearchCriteria(
     Long categoryId,
     String tag,
     String search,
+    String currency,
     Integer page,
     Integer size,
     String sort) {

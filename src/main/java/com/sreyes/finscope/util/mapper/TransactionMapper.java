@@ -14,6 +14,8 @@ import org.mapstruct.Mapping;
  * La categoría viaja entera, con su identificador, porque el cliente la necesita para
  * preseleccionarla al editar y para filtrar por ella; los tags viajan como texto, que es
  * todo lo que hace falta para mostrarlos y para volver a guardarlos.
+ * La moneda pasa de texto a la enumeración del contrato aquí, que es el borde: la entidad
+ * guarda el código y quien lo lee recibe un valor cerrado.
  */
 @Mapper(componentModel = "spring",
     uses = {TransactionTypeMapper.class, CategoryMapper.class})
@@ -30,6 +32,8 @@ public interface TransactionMapper {
    */
   @Mapping(target = "id", source = "transaction.id")
   @Mapping(target = "amount", source = "transaction.amount")
+  @Mapping(target = "currency", source = "transaction.currency")
+  @Mapping(target = "exchangeRate", source = "transaction.exchangeRate")
   @Mapping(target = "description", source = "transaction.description")
   @Mapping(target = "date", source = "transaction.date")
   @Mapping(target = "transactionType", source = "transactionType")

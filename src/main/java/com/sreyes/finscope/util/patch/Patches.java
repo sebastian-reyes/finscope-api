@@ -32,4 +32,19 @@ public final class Patches {
       setter.accept(value);
     }
   }
+
+  /**
+   * Devuelve el valor recibido si viene informado y, si no, el que ya tenía la entidad.
+   * Es la misma condición que {@link #setIfPresent}, resuelta como valor en lugar de como
+   * efecto: hace falta cuando el campo no se asienta suelto, sino después de comprobarlo
+   * junto a otro.
+   *
+   * @param value   valor recibido en la petición, puede ser nulo
+   * @param current valor que la entidad tiene guardado
+   * @param <T>     tipo del campo
+   * @return el valor con el que queda el campo
+   */
+  public static <T> T orKeep(T value, T current) {
+    return value == null ? current : value;
+  }
 }

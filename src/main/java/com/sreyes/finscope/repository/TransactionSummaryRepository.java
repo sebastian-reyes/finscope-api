@@ -75,7 +75,37 @@ public class TransactionSummaryRepository {
         """ + FROM_TRANSACTIONS + conditions.sql() + """
         GROUP BY tt.code
         """;
-    return execute(sql, conditions, row -> toTotal(row, null, null, null, null));
+    return execute(sql, conditions, row -> toTotal(row, null, null, null, null, null));
+  }
+
+  /**
+   * Suma los importes del periodo agrupados por moneda y por tipo de transacción.
+   *
+   * <p>Sus importes no se suman entre sí. Cada fila es una cantidad de una moneda distinta
+   * y el conjunto no tiene un total: es la razón por la que este desglose existe.</p>
+   *
+   * <p>Acota por lo que reciba, como los demás. Que a este se le pasen los criterios sin el
+   * filtro de moneda lo decide quien lo llama, porque es una decisión sobre qué significa el
+   * resumen y no sobre cómo se consulta.</p>
+   *
+   * @param userId   identificador del usuario propietario
+   * @param criteria filtros solicitados
+   * @param range    rango de fechas ya resuelto
+   * @return flujo con un total por cada combinación de moneda y tipo
+   */
+  public Flux<AmountTotal> totalsByCurrency(Long userId, TransactionSummaryCriteria criteria,
+                                            DateRange range) {
+    Conditions conditions = buildConditions(userId, criteria, range);
+    String sql = """
+        SELECT t.currency AS currency,
+               tt.code AS type_code,
+               COALESCE(SUM(t.amount), 0) AS total,
+               COUNT(*) AS movements
+        """ + FROM_TRANSACTIONS + conditions.sql() + """
+        GROUP BY t.currency, tt.code
+        """;
+    return execute(sql, conditions, row -> toTotal(row, row.get("currency", String.class),
+        null, null, null, null));
   }
 
   /**
@@ -103,7 +133,7 @@ public class TransactionSummaryRepository {
         """ + FROM_TRANSACTIONS + JOIN_CATEGORIES + conditions.sql() + """
         GROUP BY c.id_category, c.name_category, tt.code
         """;
-    return execute(sql, conditions, row -> toTotal(row,
+    return execute(sql, conditions, row -> toTotal(row, null,
         row.get("category_id", Long.class), row.get("category_name", String.class), null, null));
   }
 
@@ -133,7 +163,7 @@ public class TransactionSummaryRepository {
         GROUP BY g.name_tag, tt.code
         """;
     return execute(sql, conditions,
-        row -> toTotal(row, null, null, row.get("tag_name", String.class), null));
+        row -> toTotal(row, null, null, null, row.get("tag_name", String.class), null));
   }
 
   /**
@@ -162,7 +192,8 @@ public class TransactionSummaryRepository {
         ORDER BY period_start
         """;
     return execute(sql, conditions,
-        row -> toTotal(row, null, null, null, row.get("period_start", LocalDateTime.class)));
+        row -> toTotal(row, null, null, null, null,
+            row.get("period_start", LocalDateTime.class)));
   }
 
   /**
@@ -182,6 +213,7 @@ public class TransactionSummaryRepository {
    * Proyecta una fila de agregado, tomando de ella lo que la consulta haya agrupado.
    *
    * @param row          fila devuelta por la base de datos
+   * @param currency     moneda del grupo, nula si no se agrupa por moneda
    * @param categoryId   identificador de la categoría del grupo, nulo si no se agrupa por
    *                     categoría
    * @param categoryName nombre de esa categoría, nulo si no se agrupa por categoría
@@ -189,14 +221,14 @@ public class TransactionSummaryRepository {
    * @param periodStart  inicio del tramo del grupo, nulo si no se agrupa por tiempo
    * @return el total representado por la fila
    */
-  private AmountTotal toTotal(Readable row, Long categoryId, String categoryName, String tagName,
-                              LocalDateTime periodStart) {
+  private AmountTotal toTotal(Readable row, String currency, Long categoryId,
+                              String categoryName, String tagName, LocalDateTime periodStart) {
     BigDecimal total = row.get("total", BigDecimal.class);
     Long movements = row.get("movements", Long.class);
     return new AmountTotal(row.get("type_code", String.class),
         total == null ? BigDecimal.ZERO : total,
         movements == null ? 0L : movements,
-        categoryId, categoryName, tagName, periodStart);
+        currency, categoryId, categoryName, tagName, periodStart);
   }
 
   /**
@@ -229,6 +261,9 @@ public class TransactionSummaryRepository {
     }
     if (criteria.categoryId() != null) {
       conditions.add("t.category_id = :categoryId", "categoryId", criteria.categoryId());
+    }
+    if (criteria.currency() != null) {
+      conditions.add("t.currency = :currency", "currency", criteria.currency());
     }
     if (criteria.tag() != null && !criteria.tag().isBlank()) {
       conditions.add("""

@@ -13,6 +13,7 @@ import com.sreyes.finscope.api.model.TransactionPageResponse;
 import com.sreyes.finscope.api.model.TransactionResponse;
 import com.sreyes.finscope.api.model.CategoryResponse;
 import com.sreyes.finscope.api.model.CategoryScope;
+import com.sreyes.finscope.api.model.Currency;
 import com.sreyes.finscope.api.model.TransactionTypeResponse;
 import com.sreyes.finscope.config.TimeConfig;
 import com.sreyes.finscope.exception.custom.DateNotFoundException;
@@ -76,6 +77,7 @@ class TransactionControllerTest {
     TransactionResponse response = new TransactionResponse();
     response.setId(1L);
     response.setAmount(new BigDecimal("300.00"));
+    response.setCurrency(Currency.PEN);
     response.setDescription("Videojuego");
     response.setDate(LocalDateTime.of(2026, 8, 17, 20, 0));
     response.setTransactionType(new TransactionTypeResponse(2L, "Egreso",
@@ -92,7 +94,7 @@ class TransactionControllerTest {
    * @return la transacción persistida
    */
   private Transaction savedTransaction() {
-    return new Transaction(1L, new BigDecimal("300.00"), "Videojuego",
+    return new Transaction(1L, new BigDecimal("300.00"), "PEN", null, "Videojuego",
         LocalDateTime.of(2026, 8, 17, 20, 0), USER_ID, 2L, 4L, null);
   }
 
@@ -127,6 +129,7 @@ class TransactionControllerTest {
             .queryParam("transactionTypeId", 2)
             .queryParam("tag", "ocio")
             .queryParam("search", "dentista")
+            .queryParam("currency", "USD")
             .queryParam("page", 2)
             .queryParam("size", 5)
             .queryParam("sort", "amount,asc")
@@ -143,6 +146,7 @@ class TransactionControllerTest {
     assertEquals(2L, criteria.transactionTypeId());
     assertEquals("ocio", criteria.tag());
     assertEquals("dentista", criteria.search());
+    assertEquals("USD", criteria.currency());
     assertEquals(2, criteria.page());
     assertEquals(5, criteria.size());
     assertEquals("amount,asc", criteria.sort());
@@ -227,6 +231,41 @@ class TransactionControllerTest {
         .expectStatus().isCreated()
         .expectBody()
         .jsonPath("$.tags.length()").isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName("Devuelve la moneda de la transaccion")
+  void returnsTransactionCurrency() {
+    when(transactionQueryService.getTransactionById(USER_ID, 1L))
+        .thenReturn(Mono.just(transactionResponse()));
+
+    webTestClient.get().uri("/transactions/1")
+        .exchange()
+        .expectStatus().isOk()
+        .expectBody()
+        .jsonPath("$.currency").isEqualTo("PEN");
+  }
+
+  @Test
+  @DisplayName("Rechaza con 400 una moneda que todavia no se admite")
+  void rejectsUnsupportedCurrency() {
+    webTestClient.post().uri("/transactions")
+        .bodyValue(Map.of("amount", 300.00, "currency", "EUR", "exchangeRate", 3.9,
+            "transactionTypeId", 2, "categoryId", 4))
+        .exchange()
+        .expectStatus().isBadRequest();
+  }
+
+  @Test
+  @DisplayName("Rechaza con 400 un tipo de cambio no positivo")
+  void rejectsNonPositiveExchangeRate() {
+    webTestClient.post().uri("/transactions")
+        .bodyValue(Map.of("amount", 300.00, "currency", "USD", "exchangeRate", 0,
+            "transactionTypeId", 2, "categoryId", 4))
+        .exchange()
+        .expectStatus().isBadRequest()
+        .expectBody()
+        .jsonPath("$.code").isEqualTo("VALIDATION_ERROR");
   }
 
   @Test

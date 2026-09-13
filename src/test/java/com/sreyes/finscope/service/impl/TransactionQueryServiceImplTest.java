@@ -80,8 +80,8 @@ class TransactionQueryServiceImplTest {
    * @param totalElements total de transacciones que cumplen los filtros
    */
   private void givenSearchReturnsOneTransaction(long totalElements) {
-    Transaction transaction = new Transaction(1L, new BigDecimal("300.00"), "Videojuego",
-        LocalDateTime.of(2026, 8, 17, 20, 0), USER_ID, 3L, 5L, null);
+    Transaction transaction = new Transaction(1L, new BigDecimal("300.00"), "PEN", null,
+        "Videojuego", LocalDateTime.of(2026, 8, 17, 20, 0), USER_ID, 3L, 5L, null);
     when(transactionSearchRepository.search(any(), any())).thenReturn(Flux.just(transaction));
     when(transactionSearchRepository.count(any())).thenReturn(Mono.just(totalElements));
     when(transactionTypeRepository.findAllById(any(Iterable.class)))
@@ -102,7 +102,7 @@ class TransactionQueryServiceImplTest {
    * @return los criterios de búsqueda
    */
   private TransactionSearchCriteria criteria(int page, int size, String sort) {
-    return new TransactionSearchCriteria(null, null, null, null, null, null, null, null, page,
+    return new TransactionSearchCriteria(null, null, null, null, null, null, null, null, null, page,
         size, sort);
   }
 
@@ -175,7 +175,7 @@ class TransactionQueryServiceImplTest {
   @DisplayName("Convierte el filtro de mes y año en el rango del mes completo")
   void translatesMonthFilterIntoDateRange() {
     givenSearchReturnsOneTransaction(1L);
-    TransactionSearchCriteria criteria = new TransactionSearchCriteria(8, 2026, null, null,
+    TransactionSearchCriteria criteria = new TransactionSearchCriteria(8, 2026, null, null, null,
         null, null, null, null, 0, 20, null);
 
     StepVerifier.create(transactionQueryService.searchTransactions(USER_ID, criteria))
@@ -193,7 +193,7 @@ class TransactionQueryServiceImplTest {
   @DisplayName("Rechaza combinar el filtro de mes con un rango explícito de fechas")
   void rejectsConflictingDateFilters() {
     TransactionSearchCriteria criteria = new TransactionSearchCriteria(8, 2026,
-        LocalDateTime.of(2026, 1, 1, 0, 0), null, null, null, null, null, 0, 20, null);
+        LocalDateTime.of(2026, 1, 1, 0, 0), null, null, null, null, null, null, 0, 20, null);
 
     StepVerifier.create(transactionQueryService.searchTransactions(USER_ID, criteria))
         .expectError(DateNotFoundException.class)
@@ -203,7 +203,7 @@ class TransactionQueryServiceImplTest {
   @Test
   @DisplayName("Exige informar mes y año conjuntamente")
   void rejectsIncompleteMonthFilter() {
-    TransactionSearchCriteria criteria = new TransactionSearchCriteria(8, null, null, null,
+    TransactionSearchCriteria criteria = new TransactionSearchCriteria(8, null, null, null, null,
         null, null, null, null, 0, 20, null);
 
     StepVerifier.create(transactionQueryService.searchTransactions(USER_ID, criteria))
@@ -215,8 +215,8 @@ class TransactionQueryServiceImplTest {
   @DisplayName("Rechaza un rango de fechas invertido")
   void rejectsInvertedDateRange() {
     TransactionSearchCriteria criteria = new TransactionSearchCriteria(null, null,
-        LocalDateTime.of(2026, 8, 31, 0, 0), LocalDateTime.of(2026, 8, 1, 0, 0),
-        null, null, null, null, 0, 20, null);
+        LocalDateTime.of(2026, 8, 31, 0, 0), LocalDateTime.of(2026, 8, 1, 0, 0), null, null, null,
+        null, null, 0, 20, null);
 
     StepVerifier.create(transactionQueryService.searchTransactions(USER_ID, criteria))
         .expectError(DateNotFoundException.class)
@@ -227,8 +227,8 @@ class TransactionQueryServiceImplTest {
   @DisplayName("Traslada el texto buscado a los criterios del repositorio, ya recortado")
   void appliesSearchFilter() {
     givenSearchReturnsOneTransaction(1L);
-    TransactionSearchCriteria criteria = new TransactionSearchCriteria(null, null, null, null,
-        null, null, null, "  dentista  ", 0, 20, null);
+    TransactionSearchCriteria criteria = new TransactionSearchCriteria(null, null, null, null, null,
+        null, null, " dentista ", null, 0, 20, null);
 
     StepVerifier.create(transactionQueryService.searchTransactions(USER_ID, criteria))
         .expectNextCount(1)
@@ -243,8 +243,8 @@ class TransactionQueryServiceImplTest {
   @DisplayName("Trata un texto de búsqueda en blanco como la ausencia del filtro")
   void ignoresBlankSearchFilter() {
     givenSearchReturnsOneTransaction(1L);
-    TransactionSearchCriteria criteria = new TransactionSearchCriteria(null, null, null, null,
-        null, null, null, "   ", 0, 20, null);
+    TransactionSearchCriteria criteria = new TransactionSearchCriteria(null, null, null, null, null,
+        null, null, " ", null, 0, 20, null);
 
     StepVerifier.create(transactionQueryService.searchTransactions(USER_ID, criteria))
         .expectNextCount(1)
@@ -261,8 +261,8 @@ class TransactionQueryServiceImplTest {
     givenSearchReturnsOneTransaction(1L);
     when(tagRepository.findTransactionIdsByUserIdAndName(USER_ID, "ocio"))
         .thenReturn(Flux.just(1L, 2L));
-    TransactionSearchCriteria criteria = new TransactionSearchCriteria(null, null, null, null,
-        null, null, "ocio", null, 0, 20, null);
+    TransactionSearchCriteria criteria = new TransactionSearchCriteria(null, null, null, null, null,
+        null, "ocio", null, null, 0, 20, null);
 
     StepVerifier.create(transactionQueryService.searchTransactions(USER_ID, criteria))
         .expectNextCount(1)
@@ -278,8 +278,8 @@ class TransactionQueryServiceImplTest {
   void returnsEmptyPageWhenTagHasNoTransactions() {
     when(tagRepository.findTransactionIdsByUserIdAndName(USER_ID, "inexistente"))
         .thenReturn(Flux.empty());
-    TransactionSearchCriteria criteria = new TransactionSearchCriteria(null, null, null, null,
-        null, null, "inexistente", null, 0, 20, null);
+    TransactionSearchCriteria criteria = new TransactionSearchCriteria(null, null, null, null, null,
+        null, "inexistente", null, null, 0, 20, null);
 
     StepVerifier.create(transactionQueryService.searchTransactions(USER_ID, criteria))
         .assertNext(page -> {
@@ -341,8 +341,8 @@ class TransactionQueryServiceImplTest {
   @DisplayName("Traslada el filtro de categoría a los criterios del repositorio")
   void appliesCategoryFilter() {
     givenSearchReturnsOneTransaction(1L);
-    TransactionSearchCriteria criteria = new TransactionSearchCriteria(null, null, null, null,
-        null, 5L, null, null, 0, 20, null);
+    TransactionSearchCriteria criteria = new TransactionSearchCriteria(null, null, null, null, null,
+        5L, null, null, null, 0, 20, null);
 
     StepVerifier.create(transactionQueryService.searchTransactions(USER_ID, criteria))
         .expectNextCount(1)
@@ -396,8 +396,8 @@ class TransactionQueryServiceImplTest {
   void scopesTagLookupToRequestingUser() {
     givenSearchReturnsOneTransaction(1L);
     when(tagRepository.findTransactionIdsByUserIdAndName(eq(8L), any())).thenReturn(Flux.empty());
-    TransactionSearchCriteria criteria = new TransactionSearchCriteria(null, null, null, null,
-        null, null, "ocio", null, 0, 20, null);
+    TransactionSearchCriteria criteria = new TransactionSearchCriteria(null, null, null, null, null,
+        null, "ocio", null, null, 0, 20, null);
 
     StepVerifier.create(transactionQueryService.searchTransactions(8L, criteria))
         .expectNextCount(1)

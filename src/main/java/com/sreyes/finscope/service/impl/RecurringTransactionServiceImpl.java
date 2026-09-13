@@ -1,6 +1,7 @@
 package com.sreyes.finscope.service.impl;
 
 import com.sreyes.finscope.api.model.ConfirmRecurringTransactionRequest;
+import com.sreyes.finscope.api.model.Currency;
 import com.sreyes.finscope.api.model.SaveRecurringTransactionRequest;
 import com.sreyes.finscope.api.model.UpdateRecurringTransactionRequest;
 import com.sreyes.finscope.exception.custom.CategoryNotApplicableException;
@@ -34,6 +35,7 @@ import com.sreyes.finscope.util.constants.Constants;
 import com.sreyes.finscope.util.patch.Patches;
 import com.sreyes.finscope.util.query.DateRanges;
 import com.sreyes.finscope.util.rules.CategoryRules;
+import com.sreyes.finscope.util.rules.CurrencyRules;
 import com.sreyes.finscope.util.rules.TagRules;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -340,7 +342,9 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
   /**
    * Construye el movimiento con el que se confirma un mes.
    * Lo que la petición no diga se toma de la plantilla, que es justo lo que permite
-   * confirmar de un toque cuando se pagó lo previsto.
+   * confirmar de un toque cuando se pagó lo previsto. El tipo de cambio es la excepción:
+   * no puede salir de la plantilla porque es el del día en que se paga, así que un fijo
+   * fuera de la moneda base no se confirma sin él.
    *
    * @param userId  identificador del usuario propietario
    * @param detail  plantilla resuelta contra el mes que se confirma
@@ -361,6 +365,13 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
     transaction.setAmount(request.getAmount() == null
         ? detail.recurringAmount()
         : request.getAmount());
+    // La moneda sale de la plantilla y el tipo de cambio de la peticion: el de este mes no
+    // existia el dia en que el fijo se dio de alta, asi que es ahora cuando se sabe. Se
+    // validan como pareja, igual que en cualquier otro movimiento.
+    Currency currency = Currency.fromValue(detail.recurringCurrency());
+    CurrencyRules.validate(currency, request.getExchangeRate());
+    transaction.setCurrency(currency.getValue());
+    transaction.setExchangeRate(request.getExchangeRate());
     transaction.setDescription(request.getDescription() == null
         ? detail.recurringDescription()
         : request.getDescription());
@@ -407,6 +418,7 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
     recurring.setTransactionTypeId(request.getTransactionTypeId());
     recurring.setDescription(request.getDescription());
     recurring.setAmount(request.getAmount());
+    recurring.setCurrency(CurrencyRules.orBase(request.getCurrency()).getValue());
     recurring.setDayOfMonth(request.getDayOfMonth());
     recurring.setEveryMonths(request.getEveryMonths() == null ? 1 : request.getEveryMonths());
     recurring.setStartMonth(request.getStartMonth());
@@ -422,12 +434,26 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
    * @param request   datos a actualizar
    * @return la plantilla con los cambios aplicados
    */
+  /**
+   * Traduce a código la moneda recibida, conservando el nulo de «no la toques».
+   *
+   * @param currency moneda recibida en la petición, puede ser nula
+   * @return su código, o nulo si no venía ninguna
+   */
+  private String currencyCode(Currency currency) {
+    return currency == null ? null : currency.getValue();
+  }
+
   private RecurringTransaction applyChanges(RecurringTransaction recurring,
                                             UpdateRecurringTransactionRequest request) {
     Patches.setIfPresent(request.getCategoryId(), recurring::setCategoryId);
     Patches.setIfPresent(request.getTransactionTypeId(), recurring::setTransactionTypeId);
     Patches.setIfPresent(request.getDescription(), recurring::setDescription);
     Patches.setIfPresent(request.getAmount(), recurring::setAmount);
+    // La moneda de la plantilla rige de aqui en adelante. Los meses ya confirmados no se
+    // tocan: cada uno guarda en su transaccion la moneda y el cambio con los que se
+    // registro, que es lo que de verdad paso aquel dia.
+    Patches.setIfPresent(currencyCode(request.getCurrency()), recurring::setCurrency);
     Patches.setIfPresent(request.getDayOfMonth(), recurring::setDayOfMonth);
     Patches.setIfPresent(request.getEveryMonths(), recurring::setEveryMonths);
     Patches.setIfPresent(request.getStartMonth(), recurring::setStartMonth);

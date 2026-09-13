@@ -20,8 +20,10 @@ import java.math.BigDecimal;
  * @param budgetCategoryName nombre de esa categoría, con la grafía que escribió el usuario
  * @param budgetMonth        mes al que se aplica, entre 1 y 12
  * @param budgetYear         año al que se aplica
+ * @param budgetCurrency     moneda del plan; todas sus cifras están en ella
  * @param budgetAmount       importe presupuestado
- * @param budgetSpent        egresos de la categoría dentro del mes, cero si no hubo ninguno
+ * @param budgetSpent        egresos de la categoría dentro del mes en esa moneda, cero si no
+ *                           hubo ninguno
  * @param budgetCommitted    importe de los movimientos fijos de la categoría que vencen ese
  *                           mes y todavía no se han confirmado, cero si no hay ninguno
  */
@@ -31,6 +33,7 @@ public record BudgetProgress(
     String budgetCategoryName,
     Integer budgetMonth,
     Integer budgetYear,
+    String budgetCurrency,
     BigDecimal budgetAmount,
     BigDecimal budgetSpent,
     BigDecimal budgetCommitted) {

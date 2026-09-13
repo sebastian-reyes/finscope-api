@@ -7,6 +7,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.sreyes.finscope.api.model.Currency;
 import com.sreyes.finscope.exception.custom.BudgetAlreadySetException;
 import com.sreyes.finscope.exception.custom.BudgetNotFoundException;
 import com.sreyes.finscope.exception.custom.CategoryNotApplicableException;
@@ -76,7 +77,8 @@ class BudgetServiceImplTest {
   }
 
   private Budget budget() {
-    return new Budget(BUDGET_ID, USER_ID, CATEGORY_ID, MONTH, YEAR, new BigDecimal("400.00"));
+    return new Budget(BUDGET_ID, USER_ID, CATEGORY_ID, "PEN", MONTH, YEAR,
+        new BigDecimal("400.00"));
   }
 
   private BudgetProgress progress(String amount, String spent) {
@@ -84,7 +86,7 @@ class BudgetServiceImplTest {
   }
 
   private BudgetProgress progress(String amount, String spent, String committed) {
-    return new BudgetProgress(BUDGET_ID, CATEGORY_ID, "Comida", MONTH, YEAR,
+    return new BudgetProgress(BUDGET_ID, CATEGORY_ID, "Comida", MONTH, YEAR, "PEN",
         new BigDecimal(amount), new BigDecimal(spent), new BigDecimal(committed));
   }
 
@@ -121,14 +123,14 @@ class BudgetServiceImplTest {
   void createsBudget() {
     when(categoryRepository.findByIdAndUserId(CATEGORY_ID, USER_ID))
         .thenReturn(Mono.just(comida()));
-    when(budgetRepository.insertIfAbsent(USER_ID, CATEGORY_ID, MONTH, YEAR,
+    when(budgetRepository.insertIfAbsent(USER_ID, CATEGORY_ID, MONTH, YEAR, "PEN",
         new BigDecimal("400.00"))).thenReturn(Mono.just(1L));
-    when(budgetRepository.findByCategoryAndPeriod(USER_ID, CATEGORY_ID, MONTH, YEAR))
+    when(budgetRepository.findByCategoryAndPeriod(USER_ID, CATEGORY_ID, MONTH, YEAR, "PEN"))
         .thenReturn(Mono.just(budget()));
     when(budgetRepository.findProgressById(eq(USER_ID), eq(BUDGET_ID), any(), any(), any(), any()))
         .thenReturn(Mono.just(progress("400.00", "0.00")));
 
-    StepVerifier.create(budgetService.createBudget(USER_ID, CATEGORY_ID, MONTH, YEAR,
+    StepVerifier.create(budgetService.createBudget(USER_ID, CATEGORY_ID, MONTH, YEAR, null,
         new BigDecimal("400.00")))
         .assertNext(created -> {
           assertEquals(new BigDecimal("400.00"), created.budgetAmount());
@@ -138,16 +140,61 @@ class BudgetServiceImplTest {
   }
 
   @Test
+  @DisplayName("Presupuesta en dolares sin chocar con el plan que la categoria tiene en soles")
+  void createsBudgetInAnotherCurrency() {
+    when(categoryRepository.findByIdAndUserId(CATEGORY_ID, USER_ID))
+        .thenReturn(Mono.just(comida()));
+    when(budgetRepository.insertIfAbsent(USER_ID, CATEGORY_ID, MONTH, YEAR, "USD",
+        new BigDecimal("30.00"))).thenReturn(Mono.just(1L));
+    when(budgetRepository.findByCategoryAndPeriod(USER_ID, CATEGORY_ID, MONTH, YEAR, "USD"))
+        .thenReturn(Mono.just(budget()));
+    when(budgetRepository.findProgressById(eq(USER_ID), eq(BUDGET_ID), any(), any(), any(), any()))
+        .thenReturn(Mono.just(progress("30.00", "0.00")));
+
+    StepVerifier.create(budgetService.createBudget(USER_ID, CATEGORY_ID, MONTH, YEAR,
+        Currency.USD, new BigDecimal("30.00")))
+        .expectNextCount(1)
+        .verifyComplete();
+
+    // La moneda forma parte de lo que identifica al plan: la unicidad es por categoria, mes
+    // y moneda, asi que este alta no toca la fila que ya existiera en soles.
+    verify(budgetRepository).insertIfAbsent(USER_ID, CATEGORY_ID, MONTH, YEAR, "USD",
+        new BigDecimal("30.00"));
+  }
+
+  @Test
+  @DisplayName("Un presupuesto sin moneda se fija en la base, como antes de que existiera")
+  void createsBudgetInBaseCurrencyByDefault() {
+    when(categoryRepository.findByIdAndUserId(CATEGORY_ID, USER_ID))
+        .thenReturn(Mono.just(comida()));
+    when(budgetRepository.insertIfAbsent(USER_ID, CATEGORY_ID, MONTH, YEAR, "PEN",
+        new BigDecimal("400.00"))).thenReturn(Mono.just(1L));
+    when(budgetRepository.findByCategoryAndPeriod(USER_ID, CATEGORY_ID, MONTH, YEAR, "PEN"))
+        .thenReturn(Mono.just(budget()));
+    when(budgetRepository.findProgressById(eq(USER_ID), eq(BUDGET_ID), any(), any(), any(), any()))
+        .thenReturn(Mono.just(progress("400.00", "0.00")));
+
+    StepVerifier.create(budgetService.createBudget(USER_ID, CATEGORY_ID, MONTH, YEAR, null,
+        new BigDecimal("400.00")))
+        .expectNextCount(1)
+        .verifyComplete();
+
+    verify(budgetRepository).insertIfAbsent(USER_ID, CATEGORY_ID, MONTH, YEAR, "PEN",
+        new BigDecimal("400.00"));
+  }
+
+  @Test
   @DisplayName("Rechaza presupuestar una categoría de solo ingresos")
   void rejectsIncomeOnlyCategory() {
     when(categoryRepository.findByIdAndUserId(20L, USER_ID)).thenReturn(Mono.just(salario()));
 
-    StepVerifier.create(budgetService.createBudget(USER_ID, 20L, MONTH, YEAR,
+    StepVerifier.create(budgetService.createBudget(USER_ID, 20L, MONTH, YEAR, null,
         new BigDecimal("400.00")))
         .expectError(CategoryNotApplicableException.class)
         .verify();
 
-    verify(budgetRepository, never()).insertIfAbsent(any(), any(), any(), any(), any());
+    verify(budgetRepository, never())
+        .insertIfAbsent(any(), any(), any(), any(), any(), any());
   }
 
   @Test
@@ -155,7 +202,7 @@ class BudgetServiceImplTest {
   void rejectsUnknownCategory() {
     when(categoryRepository.findByIdAndUserId(99L, USER_ID)).thenReturn(Mono.empty());
 
-    StepVerifier.create(budgetService.createBudget(USER_ID, 99L, MONTH, YEAR,
+    StepVerifier.create(budgetService.createBudget(USER_ID, 99L, MONTH, YEAR, null,
         new BigDecimal("400.00")))
         .expectError(CategoryNotFoundException.class)
         .verify();
@@ -167,10 +214,10 @@ class BudgetServiceImplTest {
     when(categoryRepository.findByIdAndUserId(CATEGORY_ID, USER_ID))
         .thenReturn(Mono.just(comida()));
     // Ninguna fila escrita: la restricción de unicidad ya tenía ese par categoría-mes.
-    when(budgetRepository.insertIfAbsent(USER_ID, CATEGORY_ID, MONTH, YEAR,
+    when(budgetRepository.insertIfAbsent(USER_ID, CATEGORY_ID, MONTH, YEAR, "PEN",
         new BigDecimal("500.00"))).thenReturn(Mono.just(0L));
 
-    StepVerifier.create(budgetService.createBudget(USER_ID, CATEGORY_ID, MONTH, YEAR,
+    StepVerifier.create(budgetService.createBudget(USER_ID, CATEGORY_ID, MONTH, YEAR, null,
         new BigDecimal("500.00")))
         .expectError(BudgetAlreadySetException.class)
         .verify();
@@ -229,7 +276,7 @@ class BudgetServiceImplTest {
     when(budgetRepository.copyPeriod(USER_ID, 7, YEAR, MONTH, YEAR)).thenReturn(Mono.just(3L));
     when(budgetRepository.findProgressByPeriod(eq(USER_ID), eq(MONTH), eq(YEAR), any(), any()))
         .thenReturn(Flux.just(progress("400.00", "0.00"),
-            new BudgetProgress(12L, 5L, "Transporte", MONTH, YEAR, new BigDecimal("150.00"),
+            new BudgetProgress(12L, 5L, "Transporte", MONTH, YEAR, "PEN", new BigDecimal("150.00"),
                 new BigDecimal("20.00"), new BigDecimal("0.00"))));
 
     StepVerifier.create(budgetService.copyBudgets(USER_ID, 7, YEAR, MONTH, YEAR))

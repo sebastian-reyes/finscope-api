@@ -1,0 +1,21 @@
+-- Reverso de V5__transaction_currency.sql.
+--
+-- No lo aplica Flyway: se guarda con extension .txt a proposito para que no lo tome por
+-- una migracion. Es para deshacer a mano el soporte de monedas si hiciera falta volver
+-- atras.
+--
+-- AVISO: esto si destruye datos. Las transacciones registradas en otra moneda pierden
+-- cual era y con que tipo de cambio se apuntaron, y sus importes quedan mezclados con los
+-- de soles como si todos lo fueran. Antes de ejecutarlo conviene saber que no hay ninguna:
+--
+--   SELECT COUNT(*) FROM transactions WHERE currency <> 'PEN';
+--
+-- Si devuelve algo distinto de cero, esas filas hay que resolverlas a mano primero.
+
+ALTER TABLE transactions
+    DROP CONSTRAINT IF EXISTS chk_transactions_exchange_rate,
+    DROP CONSTRAINT IF EXISTS chk_transactions_currency;
+
+ALTER TABLE transactions
+    DROP COLUMN IF EXISTS exchange_rate,
+    DROP COLUMN IF EXISTS currency;

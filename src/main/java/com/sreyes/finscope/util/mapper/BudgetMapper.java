@@ -37,6 +37,7 @@ public interface BudgetMapper {
   @Mapping(target = "category", source = "budgetCategoryName")
   @Mapping(target = "month", source = "budgetMonth")
   @Mapping(target = "year", source = "budgetYear")
+  @Mapping(target = "currency", source = "budgetCurrency")
   @Mapping(target = "amount", source = "budgetAmount")
   @Mapping(target = "spent", source = "budgetSpent")
   @Mapping(target = "committed", source = "budgetCommitted")

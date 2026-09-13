@@ -1,0 +1,36 @@
+-- Reverso de V6__budget_and_recurring_currency.sql.
+--
+-- No lo aplica Flyway: se guarda con extension .txt a proposito para que no lo tome por
+-- una migracion. Es para deshacer a mano la moneda de presupuestos y fijos.
+--
+-- AVISO: vuelve a dejar una categoria con un solo presupuesto por mes, asi que si alguna
+-- tiene plan en dos monedas la unicidad no se podra recrear. Antes de ejecutarlo conviene
+-- saber si hay alguna:
+--
+--   SELECT user_id, category_id, month, year, COUNT(*)
+--   FROM budgets
+--   GROUP BY user_id, category_id, month, year
+--   HAVING COUNT(*) > 1;
+--
+-- Si devuelve filas, hay que decidir con cual se queda cada una antes de seguir. Lo mismo
+-- con los fijos que no esten en soles: pierden su moneda y pasarian a confirmarse como si
+-- lo estuvieran.
+--
+--   SELECT COUNT(*) FROM recurring_transactions WHERE currency <> 'PEN';
+
+ALTER TABLE recurring_transactions
+    DROP CONSTRAINT IF EXISTS chk_recurring_currency;
+
+ALTER TABLE recurring_transactions
+    DROP COLUMN IF EXISTS currency;
+
+ALTER TABLE budgets
+    DROP CONSTRAINT IF EXISTS uq_budgets_user_category_period,
+    DROP CONSTRAINT IF EXISTS chk_budgets_currency;
+
+ALTER TABLE budgets
+    DROP COLUMN IF EXISTS currency;
+
+ALTER TABLE budgets
+    ADD CONSTRAINT uq_budgets_user_category_period
+        UNIQUE (user_id, category_id, month, year);

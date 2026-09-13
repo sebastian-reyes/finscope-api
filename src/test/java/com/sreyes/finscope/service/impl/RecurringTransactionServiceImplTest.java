@@ -14,6 +14,8 @@ import com.sreyes.finscope.api.model.ConfirmRecurringTransactionRequest;
 import com.sreyes.finscope.api.model.SaveRecurringTransactionRequest;
 import com.sreyes.finscope.api.model.UpdateRecurringTransactionRequest;
 import com.sreyes.finscope.exception.custom.CategoryNotApplicableException;
+import com.sreyes.finscope.exception.custom.ExchangeRateNotApplicableException;
+import com.sreyes.finscope.exception.custom.ExchangeRateRequiredException;
 import com.sreyes.finscope.exception.custom.RecurringAlreadyConfirmedException;
 import com.sreyes.finscope.exception.custom.RecurringDateOutOfPeriodException;
 import com.sreyes.finscope.exception.custom.RecurringNotDueException;
@@ -138,7 +140,7 @@ class RecurringTransactionServiceImplTest {
 
   private RecurringTransaction recurring() {
     return new RecurringTransaction(RECURRING_ID, USER_ID, CATEGORY_ID, TYPE_ID, "Internet",
-        new BigDecimal("180.00"), 12, 1, 1, 2026, true);
+        new BigDecimal("180.00"), "PEN", 12, 1, 1, 2026, true);
   }
 
   /**
@@ -152,10 +154,21 @@ class RecurringTransactionServiceImplTest {
    */
   private RecurringDetail detail(int day, boolean due, boolean skipped, Long transactionId) {
     return new RecurringDetail(RECURRING_ID, CATEGORY_ID, "Servicios", TYPE_ID, "EXPENSE",
-        "Internet", new BigDecimal("180.00"), day, 1, 1, 2026, true, MONTH, YEAR, due, skipped,
-        transactionId,
-        transactionId == null ? null : new BigDecimal("175.00"),
+        "Internet", new BigDecimal("180.00"), "PEN", day, 1, 1, 2026, true, MONTH, YEAR, due,
+        skipped, transactionId, transactionId == null ? null : new BigDecimal("175.00"),
         transactionId == null ? null : LocalDateTime.of(2026, 8, 12, 9, 0));
+  }
+
+  /**
+   * La misma fila, pero con el cargo en una moneda que no es la base.
+   *
+   * @param day día previsto, sin recortar
+   * @return la proyección de una plantilla en dólares, pendiente ese mes
+   */
+  private RecurringDetail detailInDollars(int day) {
+    return new RecurringDetail(RECURRING_ID, CATEGORY_ID, "Servicios", TYPE_ID, "EXPENSE",
+        "Internet", new BigDecimal("15.99"), "USD", day, 1, 1, 2026, true, MONTH, YEAR, true,
+        false, null, null, null);
   }
 
   /** Lo que la consulta devuelve cada vez que se le pregunta por el mes de las pruebas. */
@@ -229,9 +242,9 @@ class RecurringTransactionServiceImplTest {
   @Test
   @DisplayName("El día previsto se recorta al último del mes en los meses cortos")
   void clampsTheDueDayToTheLengthOfTheMonth() {
-    RecurringDetail february = new RecurringDetail(RECURRING_ID, CATEGORY_ID, "Servicios",
-        TYPE_ID, "EXPENSE", "Internet", new BigDecimal("180.00"), 31, 1, 1, 2026, true, 2, 2026,
-        true, false, null, null, null);
+    RecurringDetail february = new RecurringDetail(RECURRING_ID, CATEGORY_ID, "Servicios", TYPE_ID,
+        "EXPENSE", "Internet", new BigDecimal("180.00"), "PEN", 31, 1, 1, 2026, true, 2, 2026, true,
+        false, null, null, null);
     when(recurringRepository.findDetailsByPeriod(eq(USER_ID), eq(2), eq(2026), any(), any()))
         .thenReturn(Flux.just(february));
 
@@ -265,10 +278,79 @@ class RecurringTransactionServiceImplTest {
   }
 
   @Test
+  @DisplayName("Confirmar un fijo en dolares guarda su moneda y el cambio del dia")
+  void confirmsInAnotherCurrency() {
+    givenDetail(detailInDollars(12), detailInDollars(12));
+    when(transactionRepository.save(any(Transaction.class)))
+        .thenAnswer(call -> Mono.just(call.getArgument(0)));
+    ConfirmRecurringTransactionRequest request =
+        new ConfirmRecurringTransactionRequest(MONTH, YEAR);
+    request.setExchangeRate(new BigDecimal("3.550000"));
+
+    StepVerifier.create(recurringService.confirmRecurring(USER_ID, RECURRING_ID, request))
+        .expectNextCount(1)
+        .verifyComplete();
+
+    ArgumentCaptor<Transaction> saved = ArgumentCaptor.forClass(Transaction.class);
+    verify(transactionRepository).save(saved.capture());
+    // La moneda sale de la plantilla y el cambio de la peticion: el de este mes no existia
+    // el dia en que el fijo se dio de alta.
+    assertEquals("USD", saved.getValue().getCurrency());
+    assertEquals(new BigDecimal("3.550000"), saved.getValue().getExchangeRate());
+    assertEquals(new BigDecimal("15.99"), saved.getValue().getAmount());
+  }
+
+  @Test
+  @DisplayName("No deja confirmar un fijo en dolares sin el tipo de cambio del dia")
+  void rejectsConfirmingForeignCurrencyWithoutRate() {
+    givenDetail(detailInDollars(12));
+
+    StepVerifier.create(recurringService.confirmRecurring(USER_ID, RECURRING_ID,
+        new ConfirmRecurringTransactionRequest(MONTH, YEAR)))
+        .expectError(ExchangeRateRequiredException.class)
+        .verify();
+
+    verify(transactionRepository, never()).save(any(Transaction.class));
+  }
+
+  @Test
+  @DisplayName("Rechaza un tipo de cambio al confirmar un fijo que ya esta en la moneda base")
+  void rejectsRateWhenTemplateIsInBaseCurrency() {
+    givenDetail(detail(12, true, false, null));
+    ConfirmRecurringTransactionRequest request =
+        new ConfirmRecurringTransactionRequest(MONTH, YEAR);
+    request.setExchangeRate(new BigDecimal("3.550000"));
+
+    StepVerifier.create(recurringService.confirmRecurring(USER_ID, RECURRING_ID, request))
+        .expectError(ExchangeRateNotApplicableException.class)
+        .verify();
+
+    verify(transactionRepository, never()).save(any(Transaction.class));
+  }
+
+  @Test
+  @DisplayName("Confirmar un fijo en la moneda base no guarda ningun tipo de cambio")
+  void confirmsInBaseCurrencyWithoutRate() {
+    givenDetail(detail(12, true, false, null), detail(12, true, false, 99L));
+    when(transactionRepository.save(any(Transaction.class)))
+        .thenAnswer(call -> Mono.just(call.getArgument(0)));
+
+    StepVerifier.create(recurringService.confirmRecurring(USER_ID, RECURRING_ID,
+        new ConfirmRecurringTransactionRequest(MONTH, YEAR)))
+        .expectNextCount(1)
+        .verifyComplete();
+
+    ArgumentCaptor<Transaction> saved = ArgumentCaptor.forClass(Transaction.class);
+    verify(transactionRepository).save(saved.capture());
+    assertEquals("PEN", saved.getValue().getCurrency());
+    assertNull(saved.getValue().getExchangeRate());
+  }
+
+  @Test
   @DisplayName("Confirmar un mes ya pasado fecha el movimiento en su día previsto")
   void confirmsAPastMonthOnItsDueDay() {
     RecurringDetail july = new RecurringDetail(RECURRING_ID, CATEGORY_ID, "Servicios", TYPE_ID,
-        "EXPENSE", "Internet", new BigDecimal("180.00"), 12, 1, 1, 2026, true, 7, 2026, true,
+        "EXPENSE", "Internet", new BigDecimal("180.00"), "PEN", 12, 1, 1, 2026, true, 7, 2026, true,
         false, null, null, null);
     when(recurringRepository.findDetailById(eq(USER_ID), eq(RECURRING_ID), eq(7), eq(2026),
         any(), any())).thenReturn(Mono.just(july));

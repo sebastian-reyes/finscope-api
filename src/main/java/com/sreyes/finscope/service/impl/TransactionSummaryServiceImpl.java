@@ -1,6 +1,8 @@
 package com.sreyes.finscope.service.impl;
 
 import com.sreyes.finscope.api.model.CategorySummaryResponse;
+import com.sreyes.finscope.api.model.Currency;
+import com.sreyes.finscope.api.model.CurrencySummaryResponse;
 import com.sreyes.finscope.api.model.SummaryBucketResponse;
 import com.sreyes.finscope.api.model.SummaryGranularity;
 import com.sreyes.finscope.api.model.SummarySeriesResponse;
@@ -14,6 +16,7 @@ import com.sreyes.finscope.model.query.TransactionSummaryCriteria;
 import com.sreyes.finscope.repository.TransactionSummaryRepository;
 import com.sreyes.finscope.service.TransactionSummaryService;
 import com.sreyes.finscope.util.query.DateRanges;
+import com.sreyes.finscope.util.rules.CurrencyRules;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
@@ -30,7 +33,7 @@ import reactor.core.publisher.Mono;
 /**
  * Implementación del servicio {@link TransactionSummaryService}.
  * La suma la hace la base de datos; aquí solo se decide qué significa cada total. Esa
- * decisión es la misma en los cuatro agregados: el importe de una transacción se apunta a
+ * decisión es la misma en los cinco agregados: el importe de una transacción se apunta a
  * ingresos o a egresos según el código de su tipo, y el neto es la diferencia entre ambos.
  * Los importes se devuelven con dos decimales aunque el agregado venga con otra escala,
  * para que el cliente reciba siempre la misma forma.
@@ -38,6 +41,11 @@ import reactor.core.publisher.Mono;
  * <p>Los dos desgloses no son intercambiables y por eso viajan por separado: el de
  * categoría reparte el total del periodo, porque cada transacción tiene exactamente una; el
  * de tag se solapa, porque puede tener varios. Solo el primero admite porcentajes.</p>
+ *
+ * <p>Ningún total suma monedas distintas. Todo lo que se devuelve habla de la moneda pedida
+ * salvo el desglose por moneda, que es donde están todas y el único sitio donde tiene
+ * sentido verlas juntas: son cantidades que no se suman entre sí, y presentarlas como una
+ * sola cifra sería inventar un importe que nadie tiene.</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -55,8 +63,14 @@ public class TransactionSummaryServiceImpl implements TransactionSummaryService 
         .flatMap(range -> Mono.zip(
             transactionSummaryRepository.totalsByType(userId, criteria, range).collectList(),
             transactionSummaryRepository.totalsByCategory(userId, criteria, range).collectList(),
-            transactionSummaryRepository.totalsByTag(userId, criteria, range).collectList()))
-        .map(totals -> buildSummary(totals.getT1(), totals.getT2(), totals.getT3()));
+            transactionSummaryRepository.totalsByTag(userId, criteria, range).collectList(),
+            // Sin el filtro de moneda a proposito: de este agregado sale que monedas hay
+            // en el periodo, y acotarlo por la que se esta mirando lo dejaria contestando
+            // siempre que solo existe esa.
+            transactionSummaryRepository
+                .totalsByCurrency(userId, criteria.withoutCurrency(), range).collectList()))
+        .map(totals -> buildSummary(totals.getT1(), totals.getT2(), totals.getT3(),
+            totals.getT4()));
   }
 
   @Override
@@ -85,19 +99,53 @@ public class TransactionSummaryServiceImpl implements TransactionSummaryService 
   }
 
   /**
-   * Ensambla el resumen del periodo a partir de los totales por tipo, categoría y tag.
+   * Ensambla el resumen del periodo a partir de los totales por tipo, categoría, tag y
+   * moneda.
    *
    * @param byType     totales agrupados por tipo de transacción
    * @param byCategory totales agrupados por categoría y tipo de transacción
    * @param byTag      totales agrupados por tag y tipo de transacción
+   * @param byCurrency totales agrupados por moneda y tipo de transacción
    * @return el resumen del periodo
    */
   private TransactionSummaryResponse buildSummary(List<AmountTotal> byType,
                                                   List<AmountTotal> byCategory,
-                                                  List<AmountTotal> byTag) {
+                                                  List<AmountTotal> byTag,
+                                                  List<AmountTotal> byCurrency) {
     Balance balance = Balance.of(byType);
     return new TransactionSummaryResponse(balance.income(), balance.expense(), balance.net(),
-        balance.movements(), buildCategorySummaries(byCategory), buildTagSummaries(byTag));
+        balance.movements(), buildCurrencySummaries(byCurrency),
+        buildCategorySummaries(byCategory), buildTagSummaries(byTag));
+  }
+
+  /**
+   * Agrupa por moneda los totales que la base de datos devuelve separados por tipo.
+   *
+   * <p>El orden no lo marca el importe, como en los demás desgloses, porque importes de
+   * monedas distintas no se pueden comparar: mil soles no son más ni menos que quinientos
+   * dólares mientras nadie los convierta. Manda la moneda base y detrás van las otras por
+   * orden alfabético, de modo que la lista no baile entre llamadas y la de casa quede
+   * siempre en el mismo sitio.</p>
+   *
+   * @param byCurrency totales agrupados por moneda y tipo de transacción
+   * @return el desglose por moneda, ordenado
+   */
+  private List<CurrencySummaryResponse> buildCurrencySummaries(List<AmountTotal> byCurrency) {
+    Map<String, List<AmountTotal>> grouped = new LinkedHashMap<>();
+    for (AmountTotal total : byCurrency) {
+      grouped.computeIfAbsent(total.currency(), code -> new ArrayList<>()).add(total);
+    }
+    List<CurrencySummaryResponse> summaries = new ArrayList<>();
+    grouped.forEach((code, totals) -> {
+      Balance balance = Balance.of(totals);
+      summaries.add(new CurrencySummaryResponse(Currency.fromValue(code), balance.income(),
+          balance.expense(), balance.net(), balance.movements()));
+    });
+    summaries.sort(Comparator
+        .comparing((CurrencySummaryResponse summary) ->
+            CurrencyRules.isBase(summary.getCurrency()) ? 0 : 1)
+        .thenComparing(summary -> summary.getCurrency().getValue()));
+    return summaries;
   }
 
   /**

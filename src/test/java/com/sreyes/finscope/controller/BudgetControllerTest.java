@@ -62,8 +62,8 @@ class BudgetControllerTest {
   }
 
   private BudgetProgress progress(String amount, String spent, String committed) {
-    return new BudgetProgress(BUDGET_ID, CATEGORY_ID, "Comida", 8, 2026, new BigDecimal(amount),
-        new BigDecimal(spent), new BigDecimal(committed));
+    return new BudgetProgress(BUDGET_ID, CATEGORY_ID, "Comida", 8, 2026, "PEN",
+        new BigDecimal(amount), new BigDecimal(spent), new BigDecimal(committed));
   }
 
   @Test
@@ -71,7 +71,7 @@ class BudgetControllerTest {
   void listsBudgetsWithProgress() {
     when(budgetService.findBudgets(USER_ID, 8, 2026)).thenReturn(Flux.just(
         progress("400.00", "340.00"),
-        new BudgetProgress(12L, 5L, "Transporte", 8, 2026, new BigDecimal("150.00"),
+        new BudgetProgress(12L, 5L, "Transporte", 8, 2026, "PEN", new BigDecimal("150.00"),
             new BigDecimal("20.00"), new BigDecimal("0.00"))));
 
     webTestClient.get().uri("/budgets?month=8&year=2026")
@@ -133,7 +133,7 @@ class BudgetControllerTest {
   @Test
   @DisplayName("Fija un presupuesto y responde 201 con su avance a cero")
   void createsBudget() {
-    when(budgetService.createBudget(eq(USER_ID), eq(CATEGORY_ID), eq(8), eq(2026), any()))
+    when(budgetService.createBudget(eq(USER_ID), eq(CATEGORY_ID), eq(8), eq(2026), any(), any()))
         .thenReturn(Mono.just(progress("400.00", "0.00")));
 
     webTestClient.post().uri("/budgets")
@@ -149,7 +149,7 @@ class BudgetControllerTest {
   @Test
   @DisplayName("Presupuestar dos veces la misma categoría en el mismo mes da conflicto")
   void rejectsDuplicatedBudget() {
-    when(budgetService.createBudget(eq(USER_ID), eq(CATEGORY_ID), eq(8), eq(2026), any()))
+    when(budgetService.createBudget(eq(USER_ID), eq(CATEGORY_ID), eq(8), eq(2026), any(), any()))
         .thenReturn(Mono.error(new BudgetAlreadySetException("ya presupuestada")));
 
     webTestClient.post().uri("/budgets")
@@ -163,7 +163,7 @@ class BudgetControllerTest {
   @Test
   @DisplayName("Una categoría de solo ingresos no se puede presupuestar")
   void rejectsIncomeOnlyCategory() {
-    when(budgetService.createBudget(eq(USER_ID), eq(20L), eq(8), eq(2026), any()))
+    when(budgetService.createBudget(eq(USER_ID), eq(20L), eq(8), eq(2026), any(), any()))
         .thenReturn(Mono.error(new CategoryNotApplicableException("no admite egresos")));
 
     webTestClient.post().uri("/budgets")

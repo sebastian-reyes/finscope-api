@@ -1,5 +1,6 @@
 package com.sreyes.finscope.controller;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -11,6 +12,8 @@ import com.sreyes.finscope.api.model.SummaryBucketResponse;
 import com.sreyes.finscope.api.model.SummaryGranularity;
 import com.sreyes.finscope.api.model.SummarySeriesResponse;
 import com.sreyes.finscope.api.model.CategorySummaryResponse;
+import com.sreyes.finscope.api.model.Currency;
+import com.sreyes.finscope.api.model.CurrencySummaryResponse;
 import com.sreyes.finscope.api.model.TagSummaryResponse;
 import com.sreyes.finscope.api.model.TransactionSummaryResponse;
 import com.sreyes.finscope.config.TimeConfig;
@@ -59,7 +62,8 @@ class TransactionSummaryControllerTest {
   }
 
   /**
-   * Construye un resumen con una categoría y un tag en los desgloses.
+   * Construye un resumen con una categoría y un tag en los desgloses, y con las dos monedas
+   * del periodo en el suyo.
    *
    * @return la representación del resumen
    */
@@ -69,8 +73,13 @@ class TransactionSummaryControllerTest {
     TagSummaryResponse byTag = new TagSummaryResponse(new BigDecimal("0.00"),
         new BigDecimal("120.50"), 3L);
     byTag.setTag("ocio");
+    List<CurrencySummaryResponse> byCurrency = List.of(
+        new CurrencySummaryResponse(Currency.PEN, new BigDecimal("6200.00"),
+            new BigDecimal("2049.50"), new BigDecimal("4150.50"), 12L),
+        new CurrencySummaryResponse(Currency.USD, new BigDecimal("500.00"),
+            new BigDecimal("15.99"), new BigDecimal("484.01"), 2L));
     return new TransactionSummaryResponse(new BigDecimal("6200.00"), new BigDecimal("2049.50"),
-        new BigDecimal("4150.50"), 12L, List.of(byCategory), List.of(byTag));
+        new BigDecimal("4150.50"), 12L, byCurrency, List.of(byCategory), List.of(byTag));
   }
 
   @Test
@@ -88,6 +97,54 @@ class TransactionSummaryControllerTest {
         .jsonPath("$.net").isEqualTo(4150.50)
         .jsonPath("$.transactionCount").isEqualTo(12)
         .jsonPath("$.byTag[0].tag").isEqualTo("ocio");
+  }
+
+  @Test
+  @DisplayName("Devuelve los totales de cada moneda del periodo")
+  void returnsTotalsPerCurrency() {
+    when(transactionSummaryService.summarize(eq(USER_ID), any(TransactionSummaryCriteria.class)))
+        .thenReturn(Mono.just(summary()));
+
+    webTestClient.get().uri("/transactions/summary?month=8&year=2026")
+        .exchange()
+        .expectStatus().isOk()
+        .expectBody()
+        .jsonPath("$.byCurrency.length()").isEqualTo(2)
+        .jsonPath("$.byCurrency[0].currency").isEqualTo("PEN")
+        .jsonPath("$.byCurrency[1].currency").isEqualTo("USD")
+        .jsonPath("$.byCurrency[1].income").isEqualTo(500.00);
+  }
+
+  @Test
+  @DisplayName("Resume la moneda base cuando la peticion no indica ninguna")
+  void defaultsToBaseCurrency() {
+    when(transactionSummaryService.summarize(eq(USER_ID), any(TransactionSummaryCriteria.class)))
+        .thenReturn(Mono.just(summary()));
+
+    webTestClient.get().uri("/transactions/summary?month=8&year=2026")
+        .exchange()
+        .expectStatus().isOk();
+
+    ArgumentCaptor<TransactionSummaryCriteria> criteria =
+        ArgumentCaptor.forClass(TransactionSummaryCriteria.class);
+    verify(transactionSummaryService).summarize(eq(USER_ID), criteria.capture());
+    assertEquals("PEN", criteria.getValue().currency());
+  }
+
+  @Test
+  @DisplayName("Traslada al agregado la moneda pedida")
+  void forwardsRequestedCurrency() {
+    when(transactionSummaryService.summarize(eq(USER_ID), any(TransactionSummaryCriteria.class)))
+        .thenReturn(Mono.just(summary()));
+
+    webTestClient.get().uri("/transactions/summary?month=8&year=2026&currency=USD")
+        .exchange()
+        .expectStatus().isOk();
+
+    ArgumentCaptor<TransactionSummaryCriteria> criteria =
+        ArgumentCaptor.forClass(TransactionSummaryCriteria.class);
+    verify(transactionSummaryService).summarize(eq(USER_ID), criteria.capture());
+    assertEquals("USD", criteria.getValue().currency());
   }
 
   @Test
