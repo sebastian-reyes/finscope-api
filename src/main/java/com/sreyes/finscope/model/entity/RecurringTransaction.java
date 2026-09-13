@@ -68,6 +68,17 @@ public class RecurringTransaction {
   private BigDecimal amount;
 
   /**
+   * Moneda del cargo, en código ISO 4217.
+   *
+   * <p>La plantilla no guarda tipo de cambio, y no es un olvido: un fijo se da de alta hoy y
+   * se confirma dentro de meses, así que el cambio con el que se registre es el del día en
+   * que se pague. Se pide al confirmar y vive en la transacción, como en cualquier otro
+   * movimiento.</p>
+   */
+  @Column("currency")
+  private String currency;
+
+  /**
    * Día previsto dentro del mes, entre 1 y 31. Se recorta a la longitud del mes al
    * calcular el vencimiento: un cargo del 31 vence el 28 en febrero.
    */

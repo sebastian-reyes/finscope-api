@@ -5,15 +5,18 @@ import java.time.LocalDateTime;
 
 /**
  * Importe acumulado por un grupo de transacciones dentro de un resumen.
- * Los cuatro agregados que calcula la base de datos, el total del periodo, el total por
- * categoría, el total por tag y el total por tramo de tiempo, comparten forma: suman importes
- * de un mismo tipo de transacción y cuentan cuántas los componen. Cambia solo por qué se
- * agrupa, y eso es lo que distinguen {@code categoryId}, {@code tagName} y
- * {@code periodStart}, nulos cuando no se agrupa por ellos.
+ * Los cinco agregados que calcula la base de datos, el total del periodo, el total por
+ * moneda, el total por categoría, el total por tag y el total por tramo de tiempo, comparten
+ * forma: suman importes de un mismo tipo de transacción y cuentan cuántas los componen.
+ * Cambia solo por qué se agrupa, y eso es lo que distinguen {@code currency},
+ * {@code categoryId}, {@code tagName} y {@code periodStart}, nulos cuando no se agrupa por
+ * ellos.
  *
  * @param typeCode     código del tipo de transacción, INCOME o EXPENSE
  * @param total        suma de los importes del grupo, siempre positiva
  * @param movements    cuántas transacciones componen el grupo
+ * @param currency     moneda por la que se agrupa, nula si no se agrupa por moneda; cuando
+ *                     no lo es, los importes de grupos distintos no se suman entre sí
  * @param categoryId   identificador de la categoría por la que se agrupa, nulo si no se
  *                     agrupa por categoría
  * @param categoryName nombre de esa categoría, nulo si no se agrupa por categoría
@@ -26,6 +29,7 @@ public record AmountTotal(
     String typeCode,
     BigDecimal total,
     long movements,
+    String currency,
     Long categoryId,
     String categoryName,
     String tagName,

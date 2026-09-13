@@ -26,6 +26,7 @@ import java.time.LocalDateTime;
  * @param recurringTypeCode      código del tipo, INCOME o EXPENSE
  * @param recurringDescription   cómo llama el usuario a este fijo
  * @param recurringAmount        importe estimado de la plantilla
+ * @param recurringCurrency      moneda del cargo; la plantilla no guarda tipo de cambio
  * @param recurringDayOfMonth    día previsto dentro del mes, sin recortar
  * @param recurringEveryMonths   cada cuántos meses toca
  * @param recurringStartMonth    mes desde el que aplica
@@ -48,6 +49,7 @@ public record RecurringDetail(
     String recurringTypeCode,
     String recurringDescription,
     BigDecimal recurringAmount,
+    String recurringCurrency,
     Integer recurringDayOfMonth,
     Integer recurringEveryMonths,
     Integer recurringStartMonth,

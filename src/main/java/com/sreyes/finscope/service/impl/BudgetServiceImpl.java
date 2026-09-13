@@ -1,6 +1,7 @@
 package com.sreyes.finscope.service.impl;
 
 import com.sreyes.finscope.api.model.CategoryScope;
+import com.sreyes.finscope.api.model.Currency;
 import com.sreyes.finscope.exception.custom.BudgetAlreadySetException;
 import com.sreyes.finscope.exception.custom.BudgetNotFoundException;
 import com.sreyes.finscope.exception.custom.CategoryNotApplicableException;
@@ -14,6 +15,7 @@ import com.sreyes.finscope.repository.CategoryRepository;
 import com.sreyes.finscope.service.BudgetService;
 import com.sreyes.finscope.util.constants.Constants;
 import com.sreyes.finscope.util.query.DateRanges;
+import com.sreyes.finscope.util.rules.CurrencyRules;
 import java.math.BigDecimal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -49,25 +51,31 @@ public class BudgetServiceImpl implements BudgetService {
    * {@inheritDoc}
    *
    * <p>La inserción se apoya en la restricción de unicidad de la base de datos: si no
-   * escribe ninguna fila es porque esa categoría ya tenía presupuesto ese mes, y entonces
-   * se responde con un conflicto en lugar de sumar los dos importes o pisar el anterior.
-   * Que el importe cambie solo debe poder pasar cuando alguien lo pide explícitamente.</p>
+   * escribe ninguna fila es porque esa categoría ya tenía presupuesto ese mes en esa
+   * moneda, y entonces se responde con un conflicto en lugar de sumar los dos importes o
+   * pisar el anterior. Que el importe cambie solo debe poder pasar cuando alguien lo pide
+   * explícitamente.</p>
+   *
+   * <p>La moneda forma parte de lo que identifica al plan, así que presupuestar en dólares
+   * una categoría que ya tiene plan en soles no choca: son dos cantidades distintas y
+   * ninguna resume a la otra.</p>
    */
   @Override
   public Mono<BudgetProgress> createBudget(Long userId, Long categoryId, Integer month,
-                                           Integer year, BigDecimal amount) {
+                                           Integer year, Currency currency, BigDecimal amount) {
+    String code = CurrencyRules.orBase(currency).getValue();
     // Resolver el rango antes de escribir valida de paso el mes: uno fuera de rango falla
     // aquí y no después de haber insertado la fila.
     return resolveMonth(month, year)
         .flatMap(range -> requireBudgetableCategory(userId, categoryId)
             .flatMap(category -> budgetRepository
-                .insertIfAbsent(userId, categoryId, month, year, amount)
+                .insertIfAbsent(userId, categoryId, month, year, code, amount)
                 .filter(inserted -> inserted > 0)
                 .switchIfEmpty(Mono.error(alreadySet(category.getName())))
                 // Diferido: sin esto la consulta se arma aunque la inserción no llegue a
                 // escribir nada y el flujo termine en el conflicto de arriba.
                 .then(Mono.defer(() -> budgetRepository.findByCategoryAndPeriod(userId,
-                    categoryId, month, year))))
+                    categoryId, month, year, code))))
             .flatMap(budget -> budgetRepository.findProgressById(userId, budget.getId(),
                 month, year, range.from(), range.to())));
   }

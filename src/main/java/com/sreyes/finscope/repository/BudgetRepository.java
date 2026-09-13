@@ -47,6 +47,16 @@ public interface BudgetRepository extends R2dbcRepository<Budget, Long> {
    * <p>La condición de vencimiento es la misma constante que usa el listado de fijos. Si
    * cada uno tuviera su copia, la pantalla de fijos diría que el internet vence este mes y
    * esta barra no lo estaría contando, sin forma de saber cuál de las dos miente.</p>
+   *
+   * <p>Lo gastado y lo comprometido cuentan solo lo que está en la moneda del presupuesto.
+   * Un plan es una cantidad de una moneda, no un número suelto: sumarle una compra en
+   * dólares como si sus cifras fueran comparables daría un avance falso. La consecuencia hay
+   * que conocerla: un gasto en dólares no consume un presupuesto en soles, sino el que esa
+   * categoría tenga en dólares.</p>
+   *
+   * <p>Es además lo que permite sumar los fijos sin convertir nada. Mientras el presupuesto
+   * no tenía moneda, contar un cargo fijo en dólares exigía una tasa que todavía no existe
+   * —la del día en que se confirme—; emparejando las monedas, cada plan suma los suyos.</p>
    */
   String PROGRESS_SELECT = """
       SELECT b.id_budget AS budget_id,
@@ -54,12 +64,14 @@ public interface BudgetRepository extends R2dbcRepository<Budget, Long> {
              c.name_category AS budget_category_name,
              b.month AS budget_month,
              b.year AS budget_year,
+             b.currency AS budget_currency,
              b.amount AS budget_amount,
              COALESCE(s.spent, 0) AS budget_spent,
              COALESCE(k.committed, 0) AS budget_committed
       FROM budgets b
       INNER JOIN categories c ON c.id_category = b.category_id
       LEFT JOIN (SELECT t.category_id AS category_id,
+                        t.currency AS currency,
                         SUM(t.amount) AS spent
                  FROM transactions t
                  INNER JOIN transaction_types tt
@@ -68,8 +80,10 @@ public interface BudgetRepository extends R2dbcRepository<Budget, Long> {
                    AND tt.code = 'EXPENSE'
                    AND t.date >= :periodStart
                    AND t.date <= :periodEnd
-                 GROUP BY t.category_id) s ON s.category_id = b.category_id
+                 GROUP BY t.category_id, t.currency) s
+                ON s.category_id = b.category_id AND s.currency = b.currency
       LEFT JOIN (SELECT r.category_id AS category_id,
+                        r.currency AS currency,
                         SUM(r.amount) AS committed
                  FROM recurring_transactions r
                  INNER JOIN transaction_types rt
@@ -89,7 +103,8 @@ public interface BudgetRepository extends R2dbcRepository<Budget, Long> {
                                    WHERE t2.recurring_id = r.id_recurring
                                      AND t2.date >= :periodStart
                                      AND t2.date <= :periodEnd)
-                 GROUP BY r.category_id) k ON k.category_id = b.category_id
+                 GROUP BY r.category_id, r.currency) k
+                ON k.category_id = b.category_id AND k.currency = b.currency
       """;
 
   /**
@@ -152,6 +167,7 @@ public interface BudgetRepository extends R2dbcRepository<Budget, Long> {
    * @param categoryId identificador de la categoría presupuestada
    * @param month      mes solicitado
    * @param year       año solicitado
+   * @param currency   moneda del plan
    * @return el presupuesto encontrado envuelto en Mono
    */
   @Query("""
@@ -161,8 +177,10 @@ public interface BudgetRepository extends R2dbcRepository<Budget, Long> {
         AND category_id = :categoryId
         AND month = :month
         AND year = :year
+        AND currency = :currency
       """)
-  Mono<Budget> findByCategoryAndPeriod(Long userId, Long categoryId, Integer month, Integer year);
+  Mono<Budget> findByCategoryAndPeriod(Long userId, Long categoryId, Integer month, Integer year,
+                                       String currency);
 
   /**
    * Fija el presupuesto de una categoría si esa categoría todavía no lo tiene en ese mes.
@@ -174,20 +192,23 @@ public interface BudgetRepository extends R2dbcRepository<Budget, Long> {
    * @param categoryId identificador de la categoría a presupuestar
    * @param month      mes al que se aplica
    * @param year       año al que se aplica
+   * @param currency   moneda del plan
    * @param amount     importe presupuestado
-   * @return número de filas insertadas, cero si la categoría ya tenía presupuesto ese mes
+   * @return número de filas insertadas, cero si esa categoría ya tenía presupuesto ese mes
+   *         en esa moneda
    */
   @Modifying
   @Query("""
-      INSERT INTO budgets (user_id, category_id, month, year, amount)
-      VALUES (:userId, :categoryId, :month, :year, :amount)
+      INSERT INTO budgets (user_id, category_id, month, year, currency, amount)
+      VALUES (:userId, :categoryId, :month, :year, :currency, :amount)
       ON CONFLICT DO NOTHING
       """)
   Mono<Long> insertIfAbsent(Long userId, Long categoryId, Integer month, Integer year,
-                            BigDecimal amount);
+                            String currency, BigDecimal amount);
 
   /**
    * Copia al mes destino los presupuestos que el usuario tuviera en el mes origen.
+   * Cada uno se lleva su moneda: el plan en dólares se copia como plan en dólares.
    * Lo que el destino ya tenga manda y no se pisa: el conflicto se ignora en lugar de
    * actualizar, de modo que repetir la copia no cambia nada la segunda vez y nunca
    * sobrescribe un importe que el usuario acabe de ajustar a mano.
@@ -201,8 +222,8 @@ public interface BudgetRepository extends R2dbcRepository<Budget, Long> {
    */
   @Modifying
   @Query("""
-      INSERT INTO budgets (user_id, category_id, month, year, amount)
-      SELECT b.user_id, b.category_id, :month, :year, b.amount
+      INSERT INTO budgets (user_id, category_id, month, year, currency, amount)
+      SELECT b.user_id, b.category_id, :month, :year, b.currency, b.amount
       FROM budgets b
       WHERE b.user_id = :userId AND b.month = :sourceMonth AND b.year = :sourceYear
       ON CONFLICT DO NOTHING

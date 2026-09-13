@@ -17,7 +17,7 @@ import org.springframework.data.relational.core.mapping.Table;
  * movimiento se registra, se corrige o se borra.
  *
  * La unidad es el mes natural, la misma con la que se lee un sueldo y con la que abre el
- * resumen, y cada categoría tiene como mucho un presupuesto en cada mes.
+ * resumen, y cada categoría tiene como mucho un presupuesto por mes y moneda.
  */
 @Data
 @AllArgsConstructor
@@ -45,6 +45,15 @@ public class Budget {
   /**
    * Mes al que se aplica, entre 1 y 12.
    */
+  /**
+   * Moneda del plan, en código ISO 4217.
+   * Un presupuesto es una cantidad de una moneda concreta, no un número suelto: solo cuenta
+   * lo gastado y lo comprometido en ella. Por eso una categoría puede tener dos planes en el
+   * mismo mes, uno por moneda, sin que ninguno resuma al otro.
+   */
+  @Column("currency")
+  private String currency;
+
   @Column("month")
   private Integer month;
 

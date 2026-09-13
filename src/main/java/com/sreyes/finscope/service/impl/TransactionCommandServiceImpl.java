@@ -1,6 +1,7 @@
 package com.sreyes.finscope.service.impl;
 
 import com.sreyes.finscope.api.model.CreateTransactionRequest;
+import com.sreyes.finscope.api.model.Currency;
 import com.sreyes.finscope.api.model.UpdateTransactionRequest;
 import com.sreyes.finscope.exception.custom.CategoryNotApplicableException;
 import com.sreyes.finscope.exception.custom.CategoryNotFoundException;
@@ -19,7 +20,9 @@ import com.sreyes.finscope.service.TransactionCommandService;
 import com.sreyes.finscope.util.constants.Constants;
 import com.sreyes.finscope.util.patch.Patches;
 import com.sreyes.finscope.util.rules.CategoryRules;
+import com.sreyes.finscope.util.rules.CurrencyRules;
 import com.sreyes.finscope.util.rules.TagRules;
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -35,6 +38,10 @@ import reactor.core.publisher.Mono;
  * la categoría declara a qué tipo de movimiento se ofrece, así que se comprueban como
  * pareja. Los tags, en cambio, son texto libre y, si el usuario escribe uno que todavía no
  * tiene, se da de alta en su catálogo sobre la marcha.
+ *
+ * <p>La moneda y su tipo de cambio se comprueban también como pareja, y por el mismo
+ * motivo: por separado cada uno es válido y juntos pueden describir algo que no existe. La
+ * regla vive en {@link CurrencyRules}.</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -52,7 +59,14 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
     List<String> tags = TagRules.normalize(request.getTags());
     return requireTransactionType(request.getTransactionTypeId())
         .flatMap(type -> requireUsableCategory(userId, request.getCategoryId(), type))
-        .then(Mono.defer(() -> transactionRepository.save(toEntity(userId, request))))
+        .then(Mono.defer(() -> {
+          // Dentro del flujo y no antes de montarlo: un fallo aqui tiene que viajar como
+          // error del Mono, igual que el del tipo o el de la categoria, y no escaparse
+          // mientras el llamante todavia esta construyendo la cadena.
+          CurrencyRules.validate(CurrencyRules.orBase(request.getCurrency()),
+              request.getExchangeRate());
+          return transactionRepository.save(toEntity(userId, request));
+        }))
         .flatMap(saved -> replaceTags(userId, saved.getId(), tags).thenReturn(saved));
   }
 
@@ -81,7 +95,8 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
 
   /**
    * Construye la entidad a persistir a partir de la petición de creación.
-   * Si la petición no indica fecha se registra el instante actual.
+   * Si la petición no indica fecha se registra el instante actual, y si no indica moneda se
+   * registra la base.
    *
    * @param userId  identificador del usuario propietario
    * @param request datos de la transacción a crear
@@ -91,6 +106,8 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
     Transaction transaction = new Transaction();
     transaction.setUserId(userId);
     transaction.setAmount(request.getAmount());
+    transaction.setCurrency(CurrencyRules.orBase(request.getCurrency()).getValue());
+    transaction.setExchangeRate(request.getExchangeRate());
     transaction.setDescription(request.getDescription());
     transaction.setDate(request.getDate() == null ? LocalDateTime.now(clock) : request.getDate());
     transaction.setTransactionTypeId(request.getTransactionTypeId());
@@ -111,7 +128,40 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
     Patches.setIfPresent(request.getDate(), transaction::setDate);
     Patches.setIfPresent(request.getTransactionTypeId(), transaction::setTransactionTypeId);
     Patches.setIfPresent(request.getCategoryId(), transaction::setCategoryId);
+    applyCurrency(transaction, request);
     return transaction;
+  }
+
+  /**
+   * Asienta la moneda y el tipo de cambio con los que queda el movimiento.
+   *
+   * <p>No pueden copiarse campo a campo como los demás: para saber si el cambio recibido es
+   * válido hay que mirar la moneda con la que va a quedar el movimiento, y para saber si el
+   * cambio guardado sigue sirviendo hay que mirar si la moneda cambia. Por eso la moneda
+   * manda y el cambio la sigue.</p>
+   *
+   * <p>Cambiar de moneda descarta el tipo de cambio anterior aunque la petición no lo
+   * mencione, porque era el de la moneda anterior: reaprovecharlo convertiría dólares con
+   * el cambio de los euros. Así, pasar a la moneda base lo borra sin que haya que mandar
+   * nada —que es lo único que se puede hacer cuando un nulo significa «no lo toques»—, y
+   * pasar a otra exige mandar el suyo en la misma petición.</p>
+   *
+   * <p>Cuando la moneda no cambia, el tipo de cambio guardado se conserva mientras la
+   * petición no traiga otro. Corregir el importe de una compra en dólares no vuelve a
+   * preguntar con qué cambio se apuntó, y el histórico se queda como estaba.</p>
+   *
+   * @param transaction transacción a modificar
+   * @param request     datos a actualizar
+   */
+  private void applyCurrency(Transaction transaction, UpdateTransactionRequest request) {
+    Currency current = Currency.fromValue(transaction.getCurrency());
+    Currency target = request.getCurrency() == null ? current : request.getCurrency();
+    BigDecimal exchangeRate = target == current
+        ? Patches.orKeep(request.getExchangeRate(), transaction.getExchangeRate())
+        : request.getExchangeRate();
+    CurrencyRules.validate(target, exchangeRate);
+    transaction.setCurrency(target.getValue());
+    transaction.setExchangeRate(exchangeRate);
   }
 
   /**

@@ -21,6 +21,11 @@ public final class Constants {
       "The fallback category cannot be deleted: it receives the transactions of the categories "
           + "you remove";
 
+  public static final String EXCHANGE_RATE_REQUIRED =
+      "An exchange rate is required to register an amount in {}";
+  public static final String EXCHANGE_RATE_NOT_APPLICABLE =
+      "{} is the base currency, so it takes no exchange rate";
+
   public static final String BUDGET_NOT_FOUND = "Budget not found with id: ";
   public static final String BUDGET_ALREADY_SET =
       "Category {} already has a budget for that month";

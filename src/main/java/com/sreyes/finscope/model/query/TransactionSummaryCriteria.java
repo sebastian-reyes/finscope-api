@@ -17,6 +17,8 @@ import java.time.LocalDateTime;
  * @param tag               nombre del tag asociado, sin distinguir mayúsculas
  * @param search            texto a buscar en la descripción, la categoría y los tags, sin
  *                          distinguir mayúsculas
+ * @param currency          moneda del movimiento, nula para no acotar por ella; es siempre una,
+ *                          porque un total no puede sumar monedas distintas
  */
 public record TransactionSummaryCriteria(
     Integer month,
@@ -26,5 +28,20 @@ public record TransactionSummaryCriteria(
     Long transactionTypeId,
     Long categoryId,
     String tag,
-    String search) {
+    String search,
+    String currency) {
+
+  /**
+   * Devuelve estos mismos criterios sin acotar por moneda.
+   *
+   * <p>Lo necesita el único agregado que tiene que ver todas las monedas del periodo: el
+   * que dice cuáles hay y cuánto suma cada una. Acotarlo por la moneda pedida lo dejaría
+   * contestando siempre esa, que es justo lo que no se le está preguntando.</p>
+   *
+   * @return los criterios con el filtro de moneda retirado
+   */
+  public TransactionSummaryCriteria withoutCurrency() {
+    return new TransactionSummaryCriteria(month, year, dateFrom, dateTo, transactionTypeId,
+        categoryId, tag, search, null);
+  }
 }

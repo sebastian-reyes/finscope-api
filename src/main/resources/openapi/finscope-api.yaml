@@ -31,10 +31,22 @@ info:
     presupuestados con ciento ochenta de internet todavia por pagar no son
     cuatrocientos disponibles.
 
+    El presupuesto y el movimiento fijo llevan tambien la suya, y por el mismo motivo: un
+    plan es una cantidad de una moneda concreta. Una categoria puede por tanto tener dos
+    presupuestos en el mismo mes, uno por moneda, porque ninguno resume al otro. Cada uno
+    cuenta solo lo gastado y lo comprometido en su moneda, de modo que no hay nada que
+    convertir en ningun sitio.
+
+    Cada transaccion lleva su propia moneda y se guarda en ella, sin convertirse nunca:
+    cien dolares son cien dolares el dia que se registran y el dia que se consultan. Las
+    transacciones en una moneda distinta de la base guardan ademas el tipo de cambio con
+    el que se apuntaron, que es memoria de aquel dia y no participa en ningun calculo. Por
+    eso los totales no suman monedas distintas: las separan.
+
     Todos los recursos financieros pertenecen al usuario autenticado y estan aislados
     entre usuarios. Salvo los endpoints de autenticacion, todas las operaciones exigen
     un token de acceso.
-  version: 6.4.0
+  version: 6.6.0
 servers:
   - url: /
     description: Servidor local
@@ -519,6 +531,7 @@ paths:
         - $ref: "#/components/parameters/CategoryIdFilter"
         - $ref: "#/components/parameters/TagFilter"
         - $ref: "#/components/parameters/SearchFilter"
+        - $ref: "#/components/parameters/CurrencyFilter"
         - name: page
           in: query
           description: Numero de pagina, empezando en cero
@@ -602,6 +615,11 @@ paths:
         Los importes de byTag no suman el total: una transaccion con varios tags aporta su
         importe integro a cada uno, porque el modelo no define como repartirlo. El cliente
         debe presentarlo como gasto por tag y no como un reparto porcentual del total.
+
+        Ningun total mezcla monedas. Los de primer nivel y los dos desgloses son los de una
+        sola: la del parametro currency, o la moneda base si no se indica. Para ver todas
+        las del periodo a la vez esta byCurrency, que es lo unico que no acota ese
+        parametro.
       operationId: getTransactionSummary
       parameters:
         - $ref: "#/components/parameters/MonthFilter"
@@ -612,6 +630,7 @@ paths:
         - $ref: "#/components/parameters/CategoryIdFilter"
         - $ref: "#/components/parameters/TagFilter"
         - $ref: "#/components/parameters/SearchFilter"
+        - $ref: "#/components/parameters/SummaryCurrencyFilter"
       responses:
         "200":
           description: Resumen del periodo
@@ -637,6 +656,9 @@ paths:
         Solo se devuelven los tramos que tienen alguna transaccion: el cliente conoce el
         rango y la granularidad, asi que puede completar los huecos con ceros sin que el
         servidor tenga que materializar tramos vacios.
+
+        Los tramos son de una sola moneda, la del parametro currency o la base si no se
+        indica: una linea que sumara monedas distintas no representaria ninguna cantidad.
       operationId: getTransactionSummarySeries
       parameters:
         - $ref: "#/components/parameters/MonthFilter"
@@ -647,6 +669,7 @@ paths:
         - $ref: "#/components/parameters/CategoryIdFilter"
         - $ref: "#/components/parameters/TagFilter"
         - $ref: "#/components/parameters/SearchFilter"
+        - $ref: "#/components/parameters/SummaryCurrencyFilter"
         - name: granularity
           in: query
           description: Tamanio de cada tramo
@@ -1267,6 +1290,29 @@ components:
       schema:
         type: string
         maxLength: 70
+    CurrencyFilter:
+      name: currency
+      in: query
+      description: |
+        Devuelve unicamente las transacciones de la moneda indicada.
+      required: false
+      schema:
+        $ref: "#/components/schemas/Currency"
+
+    SummaryCurrencyFilter:
+      name: currency
+      in: query
+      description: |
+        Moneda de la que se quieren los totales. Omitirlo equivale a pedir los de la moneda
+        base, no los de todas: un total que sumara monedas distintas no representaria
+        ninguna cantidad.
+        No afecta a byCurrency, que siempre trae todas las del periodo.
+      required: false
+      schema:
+        allOf:
+          - $ref: "#/components/schemas/Currency"
+        default: PEN
+
     SearchFilter:
       name: search
       in: query
@@ -1477,16 +1523,59 @@ components:
         appliesTo:
           $ref: "#/components/schemas/CategoryScope"
 
+    Currency:
+      type: string
+      description: |
+        Moneda en la que ocurrio un movimiento, en codigo ISO 4217.
+        PEN es la moneda base: es la que se asume cuando no se indica ninguna y la unica
+        que no necesita tipo de cambio, porque no se convierte a si misma.
+        Anadir una moneda es ampliar este enum y la restriccion equivalente de la base de
+        datos; el cliente necesita ademas su simbolo y su formato.
+      enum: [PEN, USD]
+
+    CurrencySummaryResponse:
+      type: object
+      description: Ingresos y egresos acumulados en una moneda dentro del periodo
+      required: [currency, income, expense, net, transactionCount]
+      properties:
+        currency:
+          $ref: "#/components/schemas/Currency"
+        income:
+          type: number
+          description: Suma de los importes de tipo INCOME en esa moneda, siempre positiva
+        expense:
+          type: number
+          description: Suma de los importes de tipo EXPENSE en esa moneda, siempre positiva
+        net:
+          type: number
+          description: Diferencia entre income y expense, negativa si se gasto de mas
+        transactionCount:
+          type: integer
+          format: int64
+
     TransactionResponse:
       type: object
-      required: [id, amount, date, transactionType, category, tags]
+      required: [id, amount, currency, date, transactionType, category, tags]
       properties:
         id:
           type: integer
           format: int64
         amount:
           type: number
-          description: Importe monetario con dos decimales, siempre positivo
+          description: |
+            Importe monetario con dos decimales, siempre positivo, expresado en la moneda
+            del campo currency. No se convierte nunca.
+        currency:
+          $ref: "#/components/schemas/Currency"
+        exchangeRate:
+          type: number
+          nullable: true
+          description: |
+            Tipo de cambio a moneda base con el que se registro el movimiento. Nulo cuando
+            la moneda ya es la base.
+            Es memoria de aquel dia y no participa en ningun total: cambiarlo manana no
+            cambia lo que costo la compra. Multiplicado por amount da su equivalente en
+            moneda base en el momento del registro.
         description:
           type: string
         date:
@@ -1511,6 +1600,26 @@ components:
           minimum: 0
           exclusiveMinimum: true
           maximum: 999999999999.99
+          description: Importe en la moneda indicada en currency
+        currency:
+          allOf:
+            - $ref: "#/components/schemas/Currency"
+          default: PEN
+          description: |
+            Moneda del movimiento. No figura entre los obligatorios para que un cuerpo sin
+            ella siga siendo valido: significa moneda base, que es lo que significaba antes
+            de que este campo existiera.
+        exchangeRate:
+          type: number
+          exclusiveMinimum: true
+          minimum: 0
+          maximum: 9999.999999
+          description: |
+            Tipo de cambio a moneda base con el que se registra el movimiento.
+            Obligatorio cuando currency no es la moneda base y prohibido cuando lo es: la
+            moneda base no se convierte a si misma. Se guarda tal cual y no vuelve a
+            tocarse, de modo que el equivalente en soles de una compra no cambia cuando el
+            cambio del dia si lo hace.
         description:
           type: string
           maxLength: 255
@@ -1549,6 +1658,26 @@ components:
           minimum: 0
           exclusiveMinimum: true
           maximum: 999999999999.99
+          description: Importe en la moneda con la que quede el movimiento
+        currency:
+          allOf:
+            - $ref: "#/components/schemas/Currency"
+          description: |
+            Moneda con la que queda el movimiento. Manda sobre el tipo de cambio: pasar a
+            una moneda que no es la base exige mandar exchangeRate en la misma peticion,
+            porque el anterior valia para la moneda anterior, y volver a la base lo borra
+            sin necesidad de mandar nada.
+        exchangeRate:
+          type: number
+          exclusiveMinimum: true
+          minimum: 0
+          maximum: 9999.999999
+          description: |
+            Tipo de cambio a moneda base con el que se registra el movimiento.
+            Obligatorio cuando currency no es la moneda base y prohibido cuando lo es: la
+            moneda base no se convierte a si misma. Se guarda tal cual y no vuelve a
+            tocarse, de modo que el equivalente en soles de una compra no cambia cuando el
+            cambio del dia si lo hace.
         description:
           type: string
           maxLength: 255
@@ -1624,8 +1753,12 @@ components:
 
     TransactionSummaryResponse:
       type: object
-      description: Totales del periodo y sus desgloses por categoria y por tag
-      required: [income, expense, net, transactionCount, byCategory, byTag]
+      description: |
+        Totales del periodo y sus desgloses por moneda, por categoria y por tag.
+        Todos los importes de un mismo nivel hablan de la misma moneda: la del filtro
+        currency, o la base si no se indico. La excepcion es byCurrency, que es donde estan
+        todas.
+      required: [income, expense, net, transactionCount, byCurrency, byCategory, byTag]
       properties:
         income:
           type: number
@@ -1639,6 +1772,17 @@ components:
         transactionCount:
           type: integer
           format: int64
+        byCurrency:
+          type: array
+          description: |
+            Totales de cada moneda presente en el periodo, ordenados con la base primero y
+            el resto alfabeticamente. Sus importes no se suman entre si.
+
+            Es el unico campo al que no afecta el filtro currency, y a proposito: de aqui
+            sale que monedas hay que ofrecer. Viene vacio cuando el periodo no tiene ningun
+            movimiento.
+          items:
+            $ref: "#/components/schemas/CurrencySummaryResponse"
         byCategory:
           type: array
           description: |
@@ -1737,8 +1881,8 @@ components:
         El plan y la realidad viajan juntos porque por separado no dicen nada: un limite de
         400 solo significa algo al lado de los 340 que ya se fueron.
       required:
-        [id, categoryId, category, month, year, amount, spent, committed, remaining,
-         available]
+        [id, categoryId, category, month, year, currency, amount, spent, committed,
+         remaining, available]
       properties:
         id:
           type: integer
@@ -1755,20 +1899,29 @@ components:
           maximum: 12
         year:
           type: integer
+        currency:
+          allOf:
+            - $ref: "#/components/schemas/Currency"
+          description: |
+            Moneda del plan. Todas las cifras de este presupuesto estan en ella, y solo
+            cuentan los movimientos de esa misma moneda: un gasto en dolares no consume un
+            presupuesto en soles, porque convertirlo haria depender el avance del dia en que
+            se mire.
         amount:
           type: number
           description: Importe presupuestado para el mes
         spent:
           type: number
           description: |
-            Egresos de esa categoria dentro del mes. Es la misma cifra que el campo expense
-            del desglose por categoria de /transactions/summary para el mismo periodo.
+            Egresos de esa categoria dentro del mes, solo los de la moneda del presupuesto.
+            Es la misma cifra que el campo expense del desglose por categoria de
+            /transactions/summary para el mismo periodo y esa misma moneda.
         committed:
           type: number
           description: |
             Lo que los movimientos fijos de esa categoria van a llevarse este mes y todavia
-            no se han llevado: la suma de los que vencen en el mes, estan activos y no estan
-            ni confirmados ni omitidos.
+            no se han llevado: la suma de los que vencen en el mes, estan activos, no estan
+            ni confirmados ni omitidos y son de la moneda del presupuesto.
 
             Es dinero que aun no figura en spent pero que ya tiene dueno. Sin el, un
             presupuesto de 400 con 120 gastados aparenta 280 libres cuando el internet de
@@ -1801,6 +1954,13 @@ components:
           type: integer
           minimum: 1970
           maximum: 9999
+        currency:
+          allOf:
+            - $ref: "#/components/schemas/Currency"
+          default: PEN
+          description: |
+            Moneda del plan. Una categoria admite un presupuesto por moneda y mes, de modo
+            que planear en dolares no pisa lo que ya estuviera planeado en soles.
         amount:
           type: number
           minimum: 0
@@ -1864,8 +2024,8 @@ components:
         Es lo que devuelven el alta y la modificacion, y va sin estado de ningun mes: el
         estado depende del mes que se mire. Para verla dentro de uno hay que listar ese mes.
       required:
-        [id, categoryId, transactionTypeId, description, amount, dayOfMonth, everyMonths,
-         startMonth, startYear, active, tags]
+        [id, categoryId, transactionTypeId, description, amount, currency, dayOfMonth,
+         everyMonths, startMonth, startYear, active, tags]
       properties:
         id:
           type: integer
@@ -1887,6 +2047,13 @@ components:
           description: |
             Lo que se suele pagar o cobrar, no lo definitivo. Al confirmar el mes se puede
             corregir, y lo corregido vive en la transaccion; aqui se conserva la estimacion.
+        currency:
+          allOf:
+            - $ref: "#/components/schemas/Currency"
+          description: |
+            Moneda del cargo. La plantilla no lleva tipo de cambio y no es un olvido: un
+            fijo se da de alta hoy y se confirma dentro de meses, asi que el cambio es el
+            del dia en que se pague y se pide al confirmar.
         dayOfMonth:
           type: integer
           minimum: 1
@@ -1937,7 +2104,7 @@ components:
         Plantilla y estado viajan juntos porque por separado no sirven de nada: una lista
         de fijos sin saber cuales faltan no es un checklist, es un catalogo.
       required:
-        [id, categoryId, category, transactionTypeId, type, description, amount,
+        [id, categoryId, category, transactionTypeId, type, description, amount, currency,
          dayOfMonth, everyMonths, startMonth, startYear, active, tags, month, year, status]
       properties:
         id:
@@ -1959,6 +2126,13 @@ components:
         amount:
           type: number
           description: Importe estimado de la plantilla, no el que se pago
+        currency:
+          allOf:
+            - $ref: "#/components/schemas/Currency"
+          description: |
+            Moneda del cargo. La plantilla no lleva tipo de cambio y no es un olvido: un
+            fijo se da de alta hoy y se confirma dentro de meses, asi que el cambio es el
+            del dia en que se pague y se pide al confirmar.
         dayOfMonth:
           type: integer
         everyMonths:
@@ -2026,6 +2200,12 @@ components:
           minimum: 0
           exclusiveMinimum: true
           description: Importe estimado, siempre mayor que cero
+        currency:
+          allOf:
+            - $ref: "#/components/schemas/Currency"
+          default: PEN
+          description: |
+            Moneda del cargo. Sin tipo de cambio: el de cada mes se pide al confirmarlo.
         dayOfMonth:
           type: integer
           minimum: 1
@@ -2077,6 +2257,12 @@ components:
           type: number
           minimum: 0
           exclusiveMinimum: true
+        currency:
+          allOf:
+            - $ref: "#/components/schemas/Currency"
+          description: |
+            Moneda con la que queda el cargo. Rige de aqui en adelante: los meses ya
+            confirmados conservan la moneda y el cambio con los que se registraron.
         dayOfMonth:
           type: integer
           minimum: 1
@@ -2128,6 +2314,16 @@ components:
           minimum: 0
           exclusiveMinimum: true
           description: Importe realmente pagado. Si no viene se usa el de la plantilla.
+        exchangeRate:
+          type: number
+          exclusiveMinimum: true
+          minimum: 0
+          maximum: 9999.999999
+          description: |
+            Tipo de cambio del dia en que se paga. Obligatorio cuando la plantilla no esta
+            en la moneda base y prohibido cuando lo esta, igual que en cualquier movimiento.
+            Es aqui y no en la plantilla porque el cambio de este mes no existia el dia en
+            que el fijo se dio de alta.
         date:
           type: string
           format: date-time

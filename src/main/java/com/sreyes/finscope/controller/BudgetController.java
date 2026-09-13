@@ -49,7 +49,8 @@ public class BudgetController implements BudgetsApi {
     return authenticatedUser.currentUserId()
         .zipWith(saveBudgetRequest)
         .flatMap(tuple -> budgetService.createBudget(tuple.getT1(), tuple.getT2().getCategoryId(),
-            tuple.getT2().getMonth(), tuple.getT2().getYear(), tuple.getT2().getAmount()))
+            tuple.getT2().getMonth(), tuple.getT2().getYear(), tuple.getT2().getCurrency(),
+            tuple.getT2().getAmount()))
         .map(budgetMapper::toResponse)
         .map(budget -> ResponseEntity.status(HttpStatus.CREATED).body(budget));
   }

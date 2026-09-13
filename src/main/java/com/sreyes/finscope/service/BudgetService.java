@@ -1,5 +1,6 @@
 package com.sreyes.finscope.service;
 
+import com.sreyes.finscope.api.model.Currency;
 import com.sreyes.finscope.model.query.BudgetProgress;
 import java.math.BigDecimal;
 import reactor.core.publisher.Flux;
@@ -32,11 +33,12 @@ public interface BudgetService {
    * @param categoryId identificador de la categoría a presupuestar, que debe admitir egresos
    * @param month      mes al que se aplica
    * @param year       año al que se aplica
+   * @param currency   moneda del plan; nula para la base
    * @param amount     importe presupuestado
    * @return el presupuesto creado junto a su avance
    */
   Mono<BudgetProgress> createBudget(Long userId, Long categoryId, Integer month, Integer year,
-                                    BigDecimal amount);
+                                    Currency currency, BigDecimal amount);
 
   /**
    * Cambia el importe de un presupuesto del usuario.

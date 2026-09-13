@@ -13,7 +13,9 @@ import org.springframework.data.relational.core.mapping.Table;
  * Entidad que representa una transacción en el sistema.
  * Está mapeada a la tabla `transactions` en la base de datos.
  * El importe se guarda siempre en positivo; el signo lo aporta el tipo de transacción,
- * que indica si se trata de un ingreso o de un egreso.
+ * que indica si se trata de un ingreso o de un egreso. Y se guarda en la moneda en que
+ * ocurrió el movimiento, sin convertirse: cien dólares son cien dólares el día que se
+ * registran y el día que se consultan.
  * Lleva exactamente una categoría, que es lo que dice en qué se gastó y permite repartir
  * el total del periodo sin contar nada dos veces, y además cero o varios tags, que dicen
  * en qué contexto ocurrió y viven en la tabla de enlace `transaction_tags`.
@@ -29,6 +31,25 @@ public class Transaction {
   private Long id;
 
   private BigDecimal amount;
+
+  /**
+   * Moneda del importe, en código ISO 4217.
+   * Se guarda como texto y no como la enumeración del contrato para que la entidad no
+   * dependa de los modelos generados: la traducción ocurre en el borde, al entrar y al
+   * salir. Los valores admitidos los fija la restricción de la tabla.
+   */
+  private String currency;
+
+  /**
+   * Tipo de cambio a moneda base con el que se registró el movimiento, nulo cuando la
+   * moneda ya es la base.
+   *
+   * No entra en ningún cálculo ni en ningún total: es memoria de aquel día. Guardarlo es
+   * lo que permite responder cuánto fueron en soles estos cien dólares sin que la respuesta
+   * cambie cada mañana, que es lo que pasaría calculándolo con el cambio de hoy.
+   */
+  @Column("exchange_rate")
+  private BigDecimal exchangeRate;
 
   private String description;
 

@@ -2,6 +2,7 @@ package com.sreyes.finscope.controller;
 
 import com.sreyes.finscope.api.TransactionsApi;
 import com.sreyes.finscope.api.model.CreateTransactionRequest;
+import com.sreyes.finscope.api.model.Currency;
 import com.sreyes.finscope.api.model.TransactionPageResponse;
 import com.sreyes.finscope.api.model.TransactionResponse;
 import com.sreyes.finscope.api.model.UpdateTransactionRequest;
@@ -36,10 +37,11 @@ public class TransactionController implements TransactionsApi {
   @Override
   public Mono<ResponseEntity<TransactionPageResponse>> listTransactions(
       Integer month, Integer year, LocalDateTime dateFrom, LocalDateTime dateTo,
-      Long transactionTypeId, Long categoryId, String tag, String search, Integer page,
-      Integer size, String sort, ServerWebExchange exchange) {
+      Long transactionTypeId, Long categoryId, String tag, String search, Currency currency,
+      Integer page, Integer size, String sort, ServerWebExchange exchange) {
     TransactionSearchCriteria criteria = new TransactionSearchCriteria(month, year, dateFrom,
-        dateTo, transactionTypeId, categoryId, tag, search, page, size, sort);
+        dateTo, transactionTypeId, categoryId, tag, search,
+        currency == null ? null : currency.getValue(), page, size, sort);
     return authenticatedUser.currentUserId()
         .flatMap(userId -> transactionQueryService.searchTransactions(userId, criteria))
         .map(ResponseEntity::ok);

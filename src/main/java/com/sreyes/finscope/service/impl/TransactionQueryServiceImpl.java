@@ -125,8 +125,8 @@ public class TransactionQueryServiceImpl implements TransactionQueryService {
   private TransactionFilter buildFilter(Long userId, TransactionSearchCriteria criteria,
                                         DateRange range, List<Long> transactionIds) {
     return new TransactionFilter(userId, range.from(), range.to(),
-        criteria.transactionTypeId(), criteria.categoryId(), normalize(criteria.search()),
-        transactionIds);
+        criteria.transactionTypeId(), criteria.categoryId(), criteria.currency(),
+        normalize(criteria.search()), transactionIds);
   }
 
   /**

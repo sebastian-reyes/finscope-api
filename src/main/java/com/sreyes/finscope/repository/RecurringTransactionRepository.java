@@ -45,6 +45,7 @@ public interface RecurringTransactionRepository
              tt.code AS recurring_type_code,
              r.description AS recurring_description,
              r.amount AS recurring_amount,
+             r.currency AS recurring_currency,
              r.day_of_month AS recurring_day_of_month,
              r.every_months AS recurring_every_months,
              r.start_month AS recurring_start_month,

@@ -104,6 +104,9 @@ public class TransactionSearchRepository {
     if (filter.categoryId() != null) {
       conditions.add("t.category_id = :categoryId", "categoryId", filter.categoryId());
     }
+    if (filter.currency() != null) {
+      conditions.add("t.currency = :currency", "currency", filter.currency());
+    }
     if (filter.search() != null) {
       conditions.add(TransactionSql.MATCHES_TEXT, "search",
           LikePatterns.contains(filter.search()));

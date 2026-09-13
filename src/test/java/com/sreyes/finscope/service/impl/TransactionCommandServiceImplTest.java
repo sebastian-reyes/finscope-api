@@ -2,6 +2,7 @@ package com.sreyes.finscope.service.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -13,9 +14,12 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.sreyes.finscope.api.model.CreateTransactionRequest;
+import com.sreyes.finscope.api.model.Currency;
 import com.sreyes.finscope.api.model.UpdateTransactionRequest;
 import com.sreyes.finscope.exception.custom.CategoryNotApplicableException;
 import com.sreyes.finscope.exception.custom.CategoryNotFoundException;
+import com.sreyes.finscope.exception.custom.ExchangeRateNotApplicableException;
+import com.sreyes.finscope.exception.custom.ExchangeRateRequiredException;
 import com.sreyes.finscope.exception.custom.TransactionNotFoundException;
 import com.sreyes.finscope.exception.custom.TransactionTypeNotFoundException;
 import com.sreyes.finscope.model.entity.Category;
@@ -49,8 +53,9 @@ import reactor.test.StepVerifier;
 
 /**
  * Pruebas unitarias de {@link TransactionCommandServiceImpl}, centradas en la validación del
- * tipo de transacción, en la normalización y el reemplazo de los tags, y en que la escritura
- * quede acotada al usuario que la pide.
+ * tipo de transacción, en la normalización y el reemplazo de los tags, en la pareja que
+ * forman la moneda y su tipo de cambio, y en que la escritura quede acotada al usuario que
+ * la pide.
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -509,13 +514,170 @@ class TransactionCommandServiceImplTest {
     verify(transactionTagRepository, never()).saveAll(any(Iterable.class));
   }
 
+  @Test
+  @DisplayName("Registra en la moneda base cuando la peticion no indica ninguna")
+  void createsInBaseCurrencyByDefault() {
+    givenValidReferences();
+
+    StepVerifier.create(transactionCommandService.createTransaction(USER_ID,
+        createRequest(List.of())))
+        .assertNext(saved -> {
+          assertEquals("PEN", saved.getCurrency());
+          assertNull(saved.getExchangeRate());
+        })
+        .verifyComplete();
+  }
+
+  @Test
+  @DisplayName("Registra una transaccion en dolares con su tipo de cambio")
+  void createsForeignCurrencyTransaction() {
+    givenValidReferences();
+    CreateTransactionRequest request = createRequest(List.of());
+    request.setAmount(new BigDecimal("60.00"));
+    request.setCurrency(Currency.USD);
+    request.setExchangeRate(new BigDecimal("3.550000"));
+
+    StepVerifier.create(transactionCommandService.createTransaction(USER_ID, request))
+        .assertNext(saved -> {
+          assertEquals(new BigDecimal("60.00"), saved.getAmount());
+          assertEquals("USD", saved.getCurrency());
+          assertEquals(new BigDecimal("3.550000"), saved.getExchangeRate());
+        })
+        .verifyComplete();
+  }
+
+  @Test
+  @DisplayName("Rechaza registrar en dolares sin tipo de cambio")
+  void rejectsForeignCurrencyWithoutRate() {
+    givenValidReferences();
+    CreateTransactionRequest request = createRequest(List.of());
+    request.setCurrency(Currency.USD);
+
+    StepVerifier.create(transactionCommandService.createTransaction(USER_ID, request))
+        .expectError(ExchangeRateRequiredException.class)
+        .verify();
+
+    verify(transactionRepository, never()).save(any(Transaction.class));
+  }
+
+  @Test
+  @DisplayName("Rechaza un tipo de cambio sobre la moneda base")
+  void rejectsRateOnBaseCurrency() {
+    givenValidReferences();
+    CreateTransactionRequest request = createRequest(List.of());
+    request.setCurrency(Currency.PEN);
+    request.setExchangeRate(new BigDecimal("3.550000"));
+
+    StepVerifier.create(transactionCommandService.createTransaction(USER_ID, request))
+        .expectError(ExchangeRateNotApplicableException.class)
+        .verify();
+
+    verify(transactionRepository, never()).save(any(Transaction.class));
+  }
+
+  @Test
+  @DisplayName("Pasa una transaccion de soles a dolares con el cambio de la misma peticion")
+  void switchesToForeignCurrency() {
+    givenValidReferences();
+    when(transactionRepository.findByIdAndUserId(10L, USER_ID))
+        .thenReturn(Mono.just(existingTransaction()));
+    UpdateTransactionRequest request = new UpdateTransactionRequest();
+    request.setCurrency(Currency.USD);
+    request.setExchangeRate(new BigDecimal("3.700000"));
+
+    StepVerifier.create(transactionCommandService.updateTransaction(USER_ID, 10L, request))
+        .assertNext(updated -> {
+          assertEquals("USD", updated.getCurrency());
+          assertEquals(new BigDecimal("3.700000"), updated.getExchangeRate());
+        })
+        .verifyComplete();
+  }
+
+  @Test
+  @DisplayName("Rechaza pasar a dolares sin mandar el tipo de cambio")
+  void rejectsSwitchToForeignCurrencyWithoutRate() {
+    givenValidReferences();
+    when(transactionRepository.findByIdAndUserId(10L, USER_ID))
+        .thenReturn(Mono.just(existingTransaction()));
+    UpdateTransactionRequest request = new UpdateTransactionRequest();
+    request.setCurrency(Currency.USD);
+
+    StepVerifier.create(transactionCommandService.updateTransaction(USER_ID, 10L, request))
+        .expectError(ExchangeRateRequiredException.class)
+        .verify();
+
+    verify(transactionRepository, never()).save(any(Transaction.class));
+  }
+
+  @Test
+  @DisplayName("Volver a la moneda base borra el tipo de cambio sin mandar nada")
+  void switchingBackToBaseClearsRate() {
+    givenValidReferences();
+    when(transactionRepository.findByIdAndUserId(10L, USER_ID))
+        .thenReturn(Mono.just(foreignTransaction()));
+    UpdateTransactionRequest request = new UpdateTransactionRequest();
+    request.setCurrency(Currency.PEN);
+
+    StepVerifier.create(transactionCommandService.updateTransaction(USER_ID, 10L, request))
+        .assertNext(updated -> {
+          assertEquals("PEN", updated.getCurrency());
+          assertNull(updated.getExchangeRate());
+        })
+        .verifyComplete();
+  }
+
+  @Test
+  @DisplayName("Corregir el importe conserva el tipo de cambio con el que se apunto")
+  void keepsHistoricRateOnPartialUpdate() {
+    givenValidReferences();
+    when(transactionRepository.findByIdAndUserId(10L, USER_ID))
+        .thenReturn(Mono.just(foreignTransaction()));
+    UpdateTransactionRequest request = new UpdateTransactionRequest();
+    request.setAmount(new BigDecimal("75.00"));
+
+    StepVerifier.create(transactionCommandService.updateTransaction(USER_ID, 10L, request))
+        .assertNext(updated -> {
+          assertEquals(new BigDecimal("75.00"), updated.getAmount());
+          assertEquals("USD", updated.getCurrency());
+          assertEquals(new BigDecimal("3.550000"), updated.getExchangeRate());
+        })
+        .verifyComplete();
+  }
+
+  @Test
+  @DisplayName("Rechaza un tipo de cambio sobre una transaccion que esta en la moneda base")
+  void rejectsRateOnExistingBaseCurrencyTransaction() {
+    givenValidReferences();
+    when(transactionRepository.findByIdAndUserId(10L, USER_ID))
+        .thenReturn(Mono.just(existingTransaction()));
+    UpdateTransactionRequest request = new UpdateTransactionRequest();
+    request.setExchangeRate(new BigDecimal("3.550000"));
+
+    StepVerifier.create(transactionCommandService.updateTransaction(USER_ID, 10L, request))
+        .expectError(ExchangeRateNotApplicableException.class)
+        .verify();
+
+    verify(transactionRepository, never()).save(any(Transaction.class));
+  }
+
   /**
    * Construye la transacción existente usada en las pruebas de actualización.
    *
    * @return la transacción existente
    */
   private Transaction existingTransaction() {
-    return new Transaction(10L, new BigDecimal("300.00"), "Original",
+    return new Transaction(10L, new BigDecimal("300.00"), "PEN", null, "Original",
         LocalDateTime.of(2026, 4, 26, 13, 35), USER_ID, 2L, 3L, null);
+  }
+
+  /**
+   * Construye la transacción existente en una moneda que no es la base, con el tipo de
+   * cambio con el que se registró.
+   *
+   * @return la transacción existente en dólares
+   */
+  private Transaction foreignTransaction() {
+    return new Transaction(10L, new BigDecimal("60.00"), "USD", new BigDecimal("3.550000"),
+        "Original", LocalDateTime.of(2026, 4, 26, 13, 35), USER_ID, 2L, 3L, null);
   }
 }

@@ -74,9 +74,8 @@ class RecurringControllerTest {
 
   private RecurringDetail detail(Long transactionId) {
     return new RecurringDetail(RECURRING_ID, CATEGORY_ID, "Servicios", TYPE_ID, "EXPENSE",
-        "Internet", new BigDecimal("180.00"), 12, 1, 1, 2026, true, 8, 2026, true, false,
-        transactionId,
-        transactionId == null ? null : new BigDecimal("175.50"),
+        "Internet", new BigDecimal("180.00"), "PEN", 12, 1, 1, 2026, true, 8, 2026, true, false,
+        transactionId, transactionId == null ? null : new BigDecimal("175.50"),
         transactionId == null ? null : LocalDateTime.of(2026, 8, 12, 9, 0));
   }
 
@@ -87,7 +86,7 @@ class RecurringControllerTest {
 
   private RecurringTemplate template() {
     RecurringTransaction recurring = new RecurringTransaction(RECURRING_ID, USER_ID, CATEGORY_ID,
-        TYPE_ID, "Internet", new BigDecimal("180.00"), 12, 1, 8, 2026, true);
+        TYPE_ID, "Internet", new BigDecimal("180.00"), "PEN", 12, 1, 8, 2026, true);
     return new RecurringTemplate(recurring, List.of("casa", "teletrabajo"));
   }
 
