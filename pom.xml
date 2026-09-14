@@ -53,6 +53,16 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
         </dependency>
+        <!--
+            Verificar el correo y recuperar la contrasena exigen escribir al buzon del
+            usuario. El starter trae JavaMail y habla SMTP, que es lo que entiende cualquier
+            proveedor, de modo que cambiar de uno a otro es cambiar variables y no codigo.
+            Es bloqueante, asi que el envio va en Schedulers.boundedElastic.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-devtools</artifactId>

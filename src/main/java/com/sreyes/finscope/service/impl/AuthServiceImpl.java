@@ -17,18 +17,16 @@ import com.sreyes.finscope.repository.UserRepository;
 import com.sreyes.finscope.security.JwtProperties;
 import com.sreyes.finscope.security.JwtService;
 import com.sreyes.finscope.security.LoginAttemptService;
+import com.sreyes.finscope.security.SecureTokens;
+import com.sreyes.finscope.service.AccountService;
 import com.sreyes.finscope.service.AuthService;
 import com.sreyes.finscope.service.CategoryService;
 import com.sreyes.finscope.util.constants.Constants;
 import jakarta.annotation.PostConstruct;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Base64;
-import java.util.HexFormat;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -49,7 +47,6 @@ import reactor.core.scheduler.Schedulers;
 public class AuthServiceImpl implements AuthService {
 
   private static final String TOKEN_TYPE = "Bearer";
-  private static final int REFRESH_TOKEN_BYTES = 32;
 
   /**
    * Longitud del valor con el que se genera el hash de comparación de descarte.
@@ -59,6 +56,7 @@ public class AuthServiceImpl implements AuthService {
   private final UserRepository userRepository;
   private final UserIdentityRepository userIdentityRepository;
   private final CategoryService categoryService;
+  private final AccountService accountService;
   private final RefreshTokenRepository refreshTokenRepository;
   private final JwtService jwtService;
   private final JwtProperties jwtProperties;
@@ -96,6 +94,7 @@ public class AuthServiceImpl implements AuthService {
     return userRepository.findByEmailIgnoreCase(email)
         .flatMap(existing -> claimSeededAccount(existing, request))
         .switchIfEmpty(Mono.defer(() -> createUser(email, request)))
+        .flatMap(this::sendEmailVerification)
         .flatMap(this::issueCredentials);
   }
 
@@ -121,7 +120,7 @@ public class AuthServiceImpl implements AuthService {
 
   @Override
   public Mono<AuthResponse> refresh(String refreshToken) {
-    return refreshTokenRepository.findByTokenHash(hash(refreshToken))
+    return refreshTokenRepository.findByTokenHash(SecureTokens.hash(refreshToken))
         .flatMap(this::requireUsableRefreshToken)
         .switchIfEmpty(Mono.error(
             new InvalidRefreshTokenException(Constants.INVALID_REFRESH_TOKEN)))
@@ -135,7 +134,7 @@ public class AuthServiceImpl implements AuthService {
 
   @Override
   public Mono<Void> logout(String refreshToken) {
-    return refreshTokenRepository.findByTokenHash(hash(refreshToken))
+    return refreshTokenRepository.findByTokenHash(SecureTokens.hash(refreshToken))
         .flatMap(this::revoke)
         .then();
   }
@@ -287,13 +286,30 @@ public class AuthServiceImpl implements AuthService {
   }
 
   /**
+   * Manda al usuario recién registrado el enlace con el que verificar su correo.
+   * Un fallo aquí no tumba el alta: la cuenta ya existe y sus credenciales son válidas, así
+   * que devolver un error haría creer que no se ha registrado. Queda en el registro, y el
+   * usuario puede pedir el correo de nuevo desde la pantalla de su cuenta.
+   *
+   * @param user usuario recién dado de alta
+   * @return el mismo usuario, se haya podido mandar el correo o no
+   */
+  private Mono<User> sendEmailVerification(User user) {
+    return accountService.sendEmailVerification(user.getId())
+        .doOnError(ex -> log.error("Could not start email verification for user {}",
+            user.getId(), ex))
+        .onErrorComplete()
+        .thenReturn(user);
+  }
+
+  /**
    * Emite el par de tokens del usuario y compone la respuesta de autenticación.
    *
    * @param user usuario autenticado
    * @return las credenciales emitidas
    */
   private Mono<AuthResponse> issueCredentials(User user) {
-    String refreshToken = generateRefreshToken();
+    String refreshToken = SecureTokens.generate();
     return persistRefreshToken(user, refreshToken)
         .thenReturn(new AuthResponse(jwtService.issueAccessToken(user), refreshToken,
             TOKEN_TYPE, jwtService.accessTokenExpiresInSeconds(), toUserResponse(user)));
@@ -309,7 +325,7 @@ public class AuthServiceImpl implements AuthService {
   private Mono<Void> persistRefreshToken(User user, String refreshToken) {
     RefreshToken token = new RefreshToken();
     token.setUserId(user.getId());
-    token.setTokenHash(hash(refreshToken));
+    token.setTokenHash(SecureTokens.hash(refreshToken));
     token.setExpiresAt(LocalDateTime.now(clock).plus(jwtProperties.refreshTokenTtl()));
     token.setRevoked(false);
     token.setCreatedAt(LocalDateTime.now(clock));
@@ -325,32 +341,6 @@ public class AuthServiceImpl implements AuthService {
   private Mono<RefreshToken> revoke(RefreshToken token) {
     token.setRevoked(true);
     return refreshTokenRepository.save(token);
-  }
-
-  /**
-   * Genera un token de refresco aleatorio con entropía criptográfica.
-   *
-   * @return el valor del token
-   */
-  private String generateRefreshToken() {
-    byte[] bytes = new byte[REFRESH_TOKEN_BYTES];
-    secureRandom.nextBytes(bytes);
-    return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-  }
-
-  /**
-   * Calcula el hash SHA-256 con el que se almacena un token de refresco.
-   *
-   * @param token valor del token
-   * @return el hash en hexadecimal
-   */
-  private String hash(String token) {
-    try {
-      MessageDigest digest = MessageDigest.getInstance("SHA-256");
-      return HexFormat.of().formatHex(digest.digest(token.getBytes(StandardCharsets.UTF_8)));
-    } catch (NoSuchAlgorithmException ex) {
-      throw new IllegalStateException("SHA-256 is required to store refresh tokens", ex);
-    }
   }
 
   /**
@@ -376,7 +366,8 @@ public class AuthServiceImpl implements AuthService {
    * @return la representacion del usuario
    */
   private UserResponse toUserResponse(User user) {
-    UserResponse response = new UserResponse(user.getId(), user.getEmail());
+    UserResponse response =
+        new UserResponse(user.getId(), user.getEmail(), user.isEmailVerified());
     response.setDisplayName(user.getDisplayName());
     return response;
   }

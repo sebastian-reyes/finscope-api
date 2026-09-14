@@ -29,6 +29,7 @@ import com.sreyes.finscope.security.JwtProperties;
 import com.sreyes.finscope.security.JwtService;
 import com.sreyes.finscope.security.LoginAttemptProperties;
 import com.sreyes.finscope.security.LoginAttemptService;
+import com.sreyes.finscope.service.AccountService;
 import com.sreyes.finscope.service.CategoryService;
 import java.time.Clock;
 import java.time.Duration;
@@ -75,6 +76,9 @@ class AuthServiceImplTest {
   @Mock
   private CategoryService categoryService;
 
+  @Mock
+  private AccountService accountService;
+
   private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
   private LoginAttemptService loginAttemptService;
@@ -88,11 +92,13 @@ class AuthServiceImplTest {
     loginAttemptService = new LoginAttemptService(
         new LoginAttemptProperties(true, 5, Duration.ofSeconds(30), Duration.ofMinutes(15)));
     authService = new AuthServiceImpl(userRepository, userIdentityRepository, categoryService,
-        refreshTokenRepository, jwtService, jwtProperties, passwordEncoder, loginAttemptService,
-        Clock.systemDefaultZone());
+        accountService, refreshTokenRepository, jwtService, jwtProperties, passwordEncoder,
+        loginAttemptService, Clock.systemDefaultZone());
     authService.initDummyPasswordHash();
     // Toda cuenta nace con su catálogo: sin él no podría registrar ni un movimiento.
     when(categoryService.seedDefaults(anyLong())).thenReturn(Mono.empty());
+    // Y con el correo de verificación en camino, que no condiciona el alta.
+    when(accountService.sendEmailVerification(any())).thenReturn(Mono.empty());
     when(jwtService.issueAccessToken(any(User.class))).thenReturn("access-token");
     when(jwtService.accessTokenExpiresInSeconds()).thenReturn(900L);
     when(refreshTokenRepository.save(any(RefreshToken.class)))
@@ -431,7 +437,7 @@ class AuthServiceImplTest {
    * @return el usuario existente
    */
   private User existingUser(String passwordHash) {
-    return new User(USER_ID, EMAIL, passwordHash, "Sebastian", true, LocalDateTime.now());
+    return new User(USER_ID, EMAIL, passwordHash, false, "Sebastian", true, LocalDateTime.now());
   }
 
   /**

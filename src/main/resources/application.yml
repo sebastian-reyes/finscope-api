@@ -79,6 +79,19 @@ finscope:
       max-attempts: ${LOGIN_ATTEMPTS_MAX:5}
       initial-lock: ${LOGIN_ATTEMPTS_INITIAL_LOCK:30s}
       max-lock: ${LOGIN_ATTEMPTS_MAX_LOCK:15m}
+  mail:
+    # Quien firma los correos y a donde apuntan sus enlaces. El servidor SMTP es aparte
+    # (spring.mail.*) y depende del entorno; sin el, los correos se escriben en el registro.
+    from: ${MAIL_FROM:FinScope <no-reply@fin-scope.app>}
+    # Origen de la aplicacion web, del que cuelgan los enlaces del correo. Si apunta al sitio
+    # equivocado los enlaces llevan a una pagina que no existe, asi que en produccion es
+    # obligatorio: application-prod.yml no le pone valor por defecto.
+    app-base-url: ${APP_BASE_URL:http://localhost:4200}
+    # El de verificar no abre nada --- solo confirma que la direccion existe --- y por eso
+    # dura un dia. Los otros dos son llaves de la cuenta y duran lo justo para usarlos.
+    verification-ttl: ${MAIL_VERIFICATION_TTL:24h}
+    password-reset-ttl: ${MAIL_PASSWORD_RESET_TTL:1h}
+    email-change-ttl: ${MAIL_EMAIL_CHANGE_TTL:1h}
 logging:
   level:
     # Estas categorias registran las sentencias y sus parametros enlazados, que en esta
