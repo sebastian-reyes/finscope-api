@@ -1,0 +1,392 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "finscope-api · Arquitectura interna",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "peticion",
+        "label": "Camino de una petición",
+        "focus": [
+          "client",
+          "filters",
+          "springsec",
+          "controllers",
+          "services",
+          "repos",
+          "db"
+        ],
+        "note": "Cuatro capas y ninguna espera: de la cadena de filtros a PostgreSQL por R2DBC."
+      },
+      {
+        "id": "contrato",
+        "label": "El contrato manda",
+        "focus": [
+          "openapi",
+          "controllers",
+          "errors",
+          "rules"
+        ],
+        "note": "El YAML genera DTO e interfaces: apartarse de él no llega a compilar."
+      },
+      {
+        "id": "seguridad",
+        "label": "Seguridad",
+        "focus": [
+          "filters",
+          "springsec",
+          "services",
+          "repos",
+          "mail"
+        ],
+        "note": "Cupo por origen, token verificado y consultas acotadas al dueño del dato."
+      },
+      {
+        "id": "persistencia",
+        "label": "Persistencia",
+        "focus": [
+          "repos",
+          "db",
+          "flyway"
+        ],
+        "note": "R2DBC para la aplicación; JDBC solo mientras Flyway aplica el esquema."
+      }
+    ],
+    "viewBox": [
+      1360,
+      610
+    ]
+  },
+  "components": [
+    {
+      "id": "client",
+      "type": "external",
+      "label": "Cliente HTTP",
+      "sublabel": "finscope-web · curl",
+      "pos": [
+        40,
+        198
+      ],
+      "size": [
+        185,
+        66
+      ]
+    },
+    {
+      "id": "filters",
+      "type": "security",
+      "label": "WebFilters",
+      "sublabel": "id de petición · cupo",
+      "tag": "20/min auth · 300/min api",
+      "pos": [
+        305,
+        198
+      ],
+      "size": [
+        185,
+        66
+      ]
+    },
+    {
+      "id": "springsec",
+      "type": "security",
+      "label": "Spring Security",
+      "sublabel": "CORS · CSP · JWT HS256",
+      "tag": "públicas: /auth y health",
+      "pos": [
+        570,
+        198
+      ],
+      "size": [
+        185,
+        66
+      ]
+    },
+    {
+      "id": "controllers",
+      "type": "backend",
+      "label": "Controladores",
+      "sublabel": "8 recursos REST",
+      "tag": "implementan el contrato",
+      "pos": [
+        835,
+        198
+      ],
+      "size": [
+        185,
+        66
+      ]
+    },
+    {
+      "id": "openapi",
+      "type": "external",
+      "label": "finscope-api.yaml",
+      "sublabel": "contrato 6.7.0",
+      "tag": "fuente de la verdad",
+      "pos": [
+        835,
+        50
+      ],
+      "size": [
+        185,
+        66
+      ]
+    },
+    {
+      "id": "errors",
+      "type": "backend",
+      "label": "ExceptionHandler",
+      "sublabel": "24 excepciones de negocio",
+      "tag": "ErrorResponse con código",
+      "pos": [
+        1100,
+        198
+      ],
+      "size": [
+        185,
+        66
+      ]
+    },
+    {
+      "id": "services",
+      "type": "backend",
+      "label": "Servicios",
+      "sublabel": "reglas · Mono y Flux",
+      "tag": "BCrypt en boundedElastic",
+      "pos": [
+        835,
+        346
+      ],
+      "size": [
+        185,
+        66
+      ]
+    },
+    {
+      "id": "rules",
+      "type": "backend",
+      "label": "Reglas y mapeadores",
+      "sublabel": "util.rules · MapStruct",
+      "tag": "cada regla, una vez",
+      "pos": [
+        1100,
+        346
+      ],
+      "size": [
+        185,
+        66
+      ]
+    },
+    {
+      "id": "repos",
+      "type": "backend",
+      "label": "Repositorios",
+      "sublabel": "R2DBC · SQL a medida",
+      "tag": "AND user_id = :sub",
+      "pos": [
+        570,
+        346
+      ],
+      "size": [
+        185,
+        66
+      ]
+    },
+    {
+      "id": "db",
+      "type": "database",
+      "label": "PostgreSQL 16",
+      "sublabel": "13 tablas",
+      "tag": "pool de 10",
+      "pos": [
+        305,
+        494
+      ],
+      "size": [
+        185,
+        66
+      ]
+    },
+    {
+      "id": "flyway",
+      "type": "database",
+      "label": "Flyway",
+      "sublabel": "V1…V7 con su reverso",
+      "tag": "el único JDBC",
+      "pos": [
+        40,
+        494
+      ],
+      "size": [
+        185,
+        66
+      ]
+    },
+    {
+      "id": "mail",
+      "type": "external",
+      "label": "Proveedor SMTP",
+      "sublabel": "Brevo · Resend · SES",
+      "tag": "sin él, solo al registro",
+      "pos": [
+        570,
+        494
+      ],
+      "size": [
+        185,
+        66
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "security-group",
+      "label": "Cadena de filtros",
+      "wraps": [
+        "filters",
+        "springsec"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "Contenedor · Spring Boot 4, WebFlux sobre Java 25",
+      "wraps": [
+        "filters",
+        "springsec",
+        "controllers",
+        "errors",
+        "services",
+        "rules",
+        "repos"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "PostgreSQL administrado",
+      "wraps": [
+        "db",
+        "flyway"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "peticion-entra",
+      "from": "client",
+      "to": "filters",
+      "label": "HTTPS · JSON",
+      "variant": "emphasis"
+    },
+    {
+      "id": "dentro-del-cupo",
+      "from": "filters",
+      "to": "springsec",
+      "label": "dentro del cupo"
+    },
+    {
+      "id": "token-valido",
+      "from": "springsec",
+      "to": "controllers",
+      "label": "token válido · sub = usuario",
+      "variant": "security",
+      "labelDy": -29
+    },
+    {
+      "id": "genera",
+      "from": "openapi",
+      "to": "controllers",
+      "label": "genera DTO e interfaces",
+      "variant": "dashed",
+      "labelDy": 24
+    },
+    {
+      "id": "a-error",
+      "from": "controllers",
+      "to": "errors",
+      "label": "excepción a 4xx",
+      "variant": "dashed"
+    },
+    {
+      "id": "dto-validado",
+      "from": "controllers",
+      "to": "services",
+      "label": "DTO validado",
+      "labelDy": 24
+    },
+    {
+      "id": "consulta",
+      "from": "services",
+      "to": "repos",
+      "label": "acotada al dueño",
+      "labelDy": -21
+    },
+    {
+      "id": "sql",
+      "from": "repos",
+      "to": "db",
+      "label": "SQL sin bloquear",
+      "variant": "emphasis"
+    },
+    {
+      "id": "migra",
+      "from": "flyway",
+      "to": "db",
+      "label": "aplica el esquema",
+      "variant": "dashed",
+      "labelDy": -28
+    },
+    {
+      "id": "invariantes",
+      "from": "services",
+      "to": "rules",
+      "label": "invariantes y mapeo",
+      "labelDy": -28
+    },
+    {
+      "id": "correo",
+      "from": "services",
+      "to": "mail",
+      "label": "envío fuera del bucle",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Reactiva de arriba abajo",
+      "items": [
+        "WebFlux y R2DBC en lugar de MVC y JDBC",
+        "Ninguna petición bloquea un hilo esperando a la base",
+        "Lo que sí bloquea —BCrypt, SMTP— sale a boundedElastic"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "El contrato manda",
+      "items": [
+        "El YAML no documenta la API: la define",
+        "El generador rehace DTO e interfaces en cada compilación",
+        "Una respuesta fuera del contrato no llega a compilar"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Seguridad",
+      "items": [
+        "Cupo por origen antes de tocar la aplicación",
+        "JWT HS256: emisor, destinatario, caducidad y sujeto",
+        "El user_id sale del token; lo ajeno responde 404"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Persistencia",
+      "items": [
+        "Trece tablas, todas colgando del usuario",
+        "Flyway al arrancar, con el reverso escrito al lado",
+        "Lo que se puede calcular no se guarda"
+      ]
+    }
+  ]
+}
