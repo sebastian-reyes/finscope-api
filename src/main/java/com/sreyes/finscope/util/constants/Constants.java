@@ -58,6 +58,10 @@ public final class Constants {
   public static final String EMAIL_ALREADY_REGISTERED = "An account already exists for this email";
   public static final String INVALID_REFRESH_TOKEN =
       "The refresh token is invalid, expired or has already been used";
+  public static final String INVALID_ACCOUNT_TOKEN =
+      "The link is invalid, has expired or has already been used. Request a new one";
+  public static final String EMAIL_UNCHANGED =
+      "That is already the email of this account";
 
   public static final String TOO_MANY_ATTEMPTS =
       "Too many failed attempts. Try again later";

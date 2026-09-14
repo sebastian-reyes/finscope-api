@@ -34,6 +34,15 @@ public class User {
   @Column("password_hash")
   private String passwordHash;
 
+  /**
+   * Si se ha demostrado que la cuenta recibe correo en la dirección que tiene puesta.
+   * No condiciona el acceso: una cuenta sin verificar funciona igual. Lo que se pierde sin
+   * verificar es poder recuperar la contraseña, porque el enlace iría a una dirección de la
+   * que nadie ha comprobado que exista.
+   */
+  @Column("email_verified")
+  private boolean emailVerified;
+
   @Column("display_name")
   private String displayName;
 

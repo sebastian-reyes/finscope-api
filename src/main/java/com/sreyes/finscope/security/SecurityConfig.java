@@ -44,7 +44,7 @@ import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
 @Configuration
 @EnableWebFluxSecurity
 @EnableConfigurationProperties({JwtProperties.class, CorsProperties.class,
-    RateLimitProperties.class, LoginAttemptProperties.class})
+    RateLimitProperties.class, LoginAttemptProperties.class, MailProperties.class})
 public class SecurityConfig {
 
   /**
@@ -55,6 +55,12 @@ public class SecurityConfig {
    */
   private static final String[] PUBLIC_PATHS = {
       "/auth/register", "/auth/login", "/auth/refresh", "/auth/logout",
+      // Las que consumen un enlace recibido por correo. No llevan token de acceso porque el
+      // enlace se abre donde se lea el correo, que rara vez es el navegador donde se pidio, y
+      // porque restablecer la contrasena es justo lo que se hace cuando no se puede entrar.
+      // El enlace es la credencial: de un solo uso, con caducidad corta y guardado en hash.
+      "/auth/verify-email/confirm", "/auth/change-email/confirm",
+      "/auth/forgot-password", "/auth/reset-password",
       "/actuator/health", "/actuator/health/**"
   };
 

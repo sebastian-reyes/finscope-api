@@ -46,7 +46,7 @@ info:
     Todos los recursos financieros pertenecen al usuario autenticado y estan aislados
     entre usuarios. Salvo los endpoints de autenticacion, todas las operaciones exigen
     un token de acceso.
-  version: 6.6.0
+  version: 6.7.0
 servers:
   - url: /
     description: Servidor local
@@ -228,6 +228,160 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /auth/verify-email:
+    post:
+      tags: [auth]
+      summary: Envia el correo de verificacion al usuario autenticado
+      description: |
+        Emite un enlace de un solo uso y lo manda a la direccion de la cuenta. Responde 202
+        antes de que el correo salga: entregarlo depende de un tercero y no debe decidir si
+        la peticion salio bien.
+        Sobre una cuenta ya verificada no hace nada y responde igual, para no convertir la
+        respuesta en una forma de averiguar el estado de otra cuenta.
+      operationId: sendEmailVerification
+      responses:
+        "202":
+          description: Correo de verificacion encolado
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /auth/verify-email/confirm:
+    post:
+      tags: [auth]
+      summary: Da por verificado el correo de una cuenta
+      description: |
+        Consume el enlace recibido por correo. Es publico porque el enlace puede abrirse en
+        un navegador distinto de aquel en el que se pidio; el token es la credencial.
+      operationId: confirmEmailVerification
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccountTokenRequest"
+      responses:
+        "204":
+          description: Correo verificado
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /auth/change-email:
+    post:
+      tags: [auth]
+      summary: Solicita el cambio de correo del usuario autenticado
+      description: |
+        Pide la contrasena en curso y manda un enlace a la direccion nueva. El correo de la
+        cuenta no cambia aqui: sigue siendo el viejo hasta que se confirma ese enlace, de
+        modo que una direccion mal escrita no deja la cuenta sin acceso.
+        A la direccion anterior se le avisa del intento, que es como se entera el dueno
+        legitimo si alguien mas ha entrado a su sesion.
+      operationId: requestEmailChange
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangeEmailRequest"
+      responses:
+        "202":
+          description: Correo de confirmacion encolado
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /auth/change-email/confirm:
+    post:
+      tags: [auth]
+      summary: Aplica el cambio de correo pendiente
+      description: |
+        Consume el enlace mandado a la direccion nueva y la pone como correo de la cuenta,
+        ya verificada: acaba de demostrarse que se recibe en ella. La identidad local se
+        actualiza con el correo nuevo, que es el que servira para entrar.
+      operationId: confirmEmailChange
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccountTokenRequest"
+      responses:
+        "204":
+          description: Correo cambiado
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /auth/forgot-password:
+    post:
+      tags: [auth]
+      summary: Pide un enlace para restablecer la contrasena
+      description: |
+        Responde 202 siempre, exista o no una cuenta con ese correo. Distinguir los dos
+        casos convertiria este endpoint en una lista de quien esta registrado.
+      operationId: requestPasswordReset
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ForgotPasswordRequest"
+      responses:
+        "202":
+          description: Si hay cuenta para ese correo, el enlace va en camino
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /auth/reset-password:
+    post:
+      tags: [auth]
+      summary: Establece una contrasena nueva con el enlace recibido
+      description: |
+        Consume el enlace y cambia la contrasena. Cierra ademas todas las sesiones abiertas:
+        quien restablece la contrasena suele hacerlo porque sospecha que otro la tiene, y
+        dejar vivos los tokens de refresco ya emitidos dejaria dentro a ese otro.
+        Al hacerlo se da tambien por verificado el correo, porque acaba de demostrarse que
+        se recibe en el.
+      operationId: resetPassword
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResetPasswordRequest"
+      responses:
+        "204":
+          description: Contrasena establecida
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "413":
           $ref: "#/components/responses/PayloadTooLarge"
         "429":
@@ -1453,15 +1607,77 @@ components:
             Nombre con el que el usuario se presenta en la aplicacion. En blanco lo deja
             sin poner.
 
+    AccountTokenRequest:
+      type: object
+      description: |
+        Enlace de un solo uso recibido por correo. Es la unica credencial de las operaciones
+        que lo piden, asi que caduca pronto y deja de valer en cuanto se usa.
+      required: [token]
+      properties:
+        token:
+          type: string
+          minLength: 1
+          maxLength: 512
+
+    ChangeEmailRequest:
+      type: object
+      description: |
+        Direccion a la que se quiere mover la cuenta, junto con la contrasena en curso. Se
+        pide la contrasena porque el correo es la credencial de acceso: sin ella, una sesion
+        abierta un momento en un ordenador ajeno bastaria para quedarse con la cuenta.
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 255
+        password:
+          type: string
+          format: password
+          minLength: 1
+          maxLength: 72
+
+    ForgotPasswordRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 255
+
+    ResetPasswordRequest:
+      type: object
+      required: [token, password]
+      properties:
+        token:
+          type: string
+          minLength: 1
+          maxLength: 512
+        password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 72
+          description: |
+            Longitud minima de 8 caracteres. El maximo de 72 lo impone el algoritmo de
+            hashing BCrypt, que ignora los caracteres posteriores.
+
     UserResponse:
       type: object
-      required: [id, email]
+      required: [id, email, emailVerified]
       properties:
         id:
           type: integer
           format: int64
         email:
           type: string
+        emailVerified:
+          type: boolean
+          description: |
+            Si se ha demostrado que la cuenta recibe correo en esa direccion. No condiciona
+            el acceso: una cuenta sin verificar funciona igual, pero no podria recuperar la
+            contrasena, que es de lo que avisa la aplicacion.
         displayName:
           type: string
 

@@ -23,6 +23,28 @@ spring:
     url: ${DB_JDBC_URL:jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:finscope_db}}
     user: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:postgres}
+  mail:
+    # Sin MAIL_HOST no hay transporte: Spring no crea el emisor y los correos se escriben
+    # enteros en el registro, con su enlace, que es lo que hace falta para seguir el flujo en
+    # local sin dar de alta ningun proveedor.
+    host: ${MAIL_HOST:}
+    # 587 es el puerto normal, pero no sirve en todas partes: Render lo bloquea junto al 25 y
+    # al 465. Por eso el puerto y el modo de cifrado son variables --- 2587 o 2525 con
+    # STARTTLS, 2465 con SSL directo --- y cambiar de uno a otro no toca ningun archivo.
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: ${MAIL_SMTP_AUTH:true}
+      # Los dos son excluyentes: STARTTLS empieza en claro y sube a cifrado, SSL va cifrado
+      # desde el saludo. Encender los dos a la vez deja la conexion colgada.
+      mail.smtp.starttls.enable: ${MAIL_SMTP_STARTTLS:true}
+      mail.smtp.ssl.enable: ${MAIL_SMTP_SSL:false}
+      # Sin esto, un servidor que no conteste deja la peticion esperando hasta que el sistema
+      # se canse, que son minutos. El envio no bloquea la respuesta, pero si ocupa un hilo.
+      mail.smtp.connectiontimeout: ${MAIL_SMTP_CONNECT_TIMEOUT:10000}
+      mail.smtp.timeout: ${MAIL_SMTP_READ_TIMEOUT:10000}
+      mail.smtp.writetimeout: ${MAIL_SMTP_WRITE_TIMEOUT:10000}
 finscope:
   security:
     jwt:
