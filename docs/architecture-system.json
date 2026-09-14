@@ -1,0 +1,330 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "FinScope · Arquitectura del sistema",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "peticion",
+        "label": "Camino de una petición",
+        "focus": [
+          "user",
+          "web",
+          "sw",
+          "apihost",
+          "security",
+          "api",
+          "db"
+        ],
+        "note": "Del toque en la pantalla hasta PostgreSQL, sin que ningún hilo espere a la base."
+      },
+      {
+        "id": "seguridad",
+        "label": "Seguridad",
+        "focus": [
+          "sw",
+          "apihost",
+          "security",
+          "api",
+          "smtp"
+        ],
+        "note": "Token en cada petición, cupo por origen y consultas acotadas al dueño."
+      },
+      {
+        "id": "entrega",
+        "label": "Entrega y datos",
+        "focus": [
+          "webhost",
+          "web",
+          "db",
+          "flyway"
+        ],
+        "note": "Un estático sirve la aplicación; Flyway aplica el esquema al arrancar la API."
+      }
+    ],
+    "viewBox": [
+      1240,
+      530
+    ]
+  },
+  "components": [
+    {
+      "id": "user",
+      "type": "external",
+      "label": "Usuario",
+      "sublabel": "navegador o app instalada",
+      "pos": [
+        60,
+        60
+      ],
+      "size": [
+        180,
+        68
+      ]
+    },
+    {
+      "id": "web",
+      "type": "frontend",
+      "label": "finscope-web",
+      "sublabel": "Angular 22 · señales",
+      "tag": "PWA instalable",
+      "pos": [
+        350,
+        60
+      ],
+      "size": [
+        180,
+        68
+      ]
+    },
+    {
+      "id": "sw",
+      "type": "frontend",
+      "label": "Service Worker",
+      "sublabel": "armazón y respuestas",
+      "tag": "red primero",
+      "pos": [
+        640,
+        60
+      ],
+      "size": [
+        180,
+        68
+      ]
+    },
+    {
+      "id": "apihost",
+      "type": "cloud",
+      "label": "Render · Docker",
+      "sublabel": "api.fin-scope.app",
+      "tag": "termina TLS",
+      "pos": [
+        930,
+        60
+      ],
+      "size": [
+        180,
+        68
+      ]
+    },
+    {
+      "id": "webhost",
+      "type": "cloud",
+      "label": "Render · estático",
+      "sublabel": "fin-scope.app",
+      "tag": "reserva a index.html",
+      "pos": [
+        60,
+        240
+      ],
+      "size": [
+        180,
+        68
+      ]
+    },
+    {
+      "id": "security",
+      "type": "security",
+      "label": "Filtros y Security",
+      "sublabel": "cupo · CORS · JWT HS256",
+      "tag": "públicas: /auth y health",
+      "pos": [
+        930,
+        240
+      ],
+      "size": [
+        180,
+        68
+      ]
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "finscope-api",
+      "sublabel": "Spring Boot 4 · WebFlux",
+      "tag": "OpenAPI 6.7.0",
+      "pos": [
+        640,
+        240
+      ],
+      "size": [
+        180,
+        68
+      ]
+    },
+    {
+      "id": "smtp",
+      "type": "external",
+      "label": "Proveedor SMTP",
+      "sublabel": "correos de la cuenta",
+      "tag": "enlaces en hash",
+      "pos": [
+        350,
+        420
+      ],
+      "size": [
+        180,
+        68
+      ]
+    },
+    {
+      "id": "db",
+      "type": "database",
+      "label": "PostgreSQL 16",
+      "sublabel": "13 tablas · R2DBC",
+      "tag": "sslMode=require",
+      "pos": [
+        640,
+        420
+      ],
+      "size": [
+        180,
+        68
+      ]
+    },
+    {
+      "id": "flyway",
+      "type": "database",
+      "label": "Flyway",
+      "sublabel": "migra al arrancar",
+      "tag": "el único JDBC",
+      "pos": [
+        930,
+        420
+      ],
+      "size": [
+        180,
+        68
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Dispositivo del usuario",
+      "wraps": [
+        "web",
+        "sw"
+      ]
+    },
+    {
+      "kind": "security-group",
+      "label": "Contenedor de la API",
+      "wraps": [
+        "api",
+        "security"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "PostgreSQL administrado",
+      "wraps": [
+        "db",
+        "flyway"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "abre",
+      "from": "user",
+      "to": "web",
+      "label": "abre la app",
+      "variant": "emphasis"
+    },
+    {
+      "id": "sirve-bundle",
+      "from": "webhost",
+      "to": "web",
+      "label": "sirve el bundle"
+    },
+    {
+      "id": "http-client",
+      "from": "web",
+      "to": "sw",
+      "label": "HttpClient · Bearer"
+    },
+    {
+      "id": "https",
+      "from": "sw",
+      "to": "apihost",
+      "label": "HTTPS",
+      "variant": "emphasis"
+    },
+    {
+      "id": "al-contenedor",
+      "from": "apihost",
+      "to": "security",
+      "label": "reenvía al contenedor",
+      "labelDy": 24
+    },
+    {
+      "id": "token-valido",
+      "from": "security",
+      "to": "api",
+      "label": "token válido",
+      "variant": "security"
+    },
+    {
+      "id": "sql",
+      "from": "api",
+      "to": "db",
+      "label": "SQL sin bloquear",
+      "variant": "emphasis",
+      "labelDy": 24
+    },
+    {
+      "id": "correo",
+      "from": "api",
+      "to": "smtp",
+      "label": "verificación y claves",
+      "variant": "dashed"
+    },
+    {
+      "id": "esquema",
+      "from": "flyway",
+      "to": "db",
+      "label": "aplica el esquema",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Frontend",
+      "items": [
+        "Angular 22 con señales, sin zone.js",
+        "Rutas diferidas y dos dependencias contadas",
+        "PWA: pregunta a la red y cae en la caché"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Backend",
+      "items": [
+        "WebFlux y R2DBC: nada bloquea un hilo",
+        "El contrato OpenAPI genera DTO e interfaces",
+        "BCrypt y SMTP van a boundedElastic"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Seguridad",
+      "items": [
+        "JWT HS256: emisor, destinatario, caducidad y sujeto",
+        "Refresco de un solo uso, en hash y rotado",
+        "Cupo por origen y bloqueo por cuenta creciente"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Datos",
+      "items": [
+        "Trece tablas, todas colgando del usuario",
+        "El user_id sale del token, nunca de la petición",
+        "Flyway al arrancar, con su reverso escrito"
+      ]
+    }
+  ]
+}
