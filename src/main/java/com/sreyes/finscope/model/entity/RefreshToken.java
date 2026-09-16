@@ -38,4 +38,12 @@ public class RefreshToken {
 
   @Column("created_at")
   private LocalDateTime createdAt;
+
+  /**
+   * Cuándo se canjeó por otro, o nulo si nunca se rotó. Solo lo fija la rotación: cerrar la
+   * sesión o revocar todos los de la cuenta lo deja a nulo, que es lo que impide que un token
+   * así vuelva a aceptarse como renovación concurrente.
+   */
+  @Column("rotated_at")
+  private LocalDateTime rotatedAt;
 }

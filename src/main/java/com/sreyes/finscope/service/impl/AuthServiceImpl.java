@@ -25,6 +25,7 @@ import com.sreyes.finscope.util.constants.Constants;
 import jakarta.annotation.PostConstruct;
 import java.security.SecureRandom;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.Optional;
@@ -135,18 +136,36 @@ public class AuthServiceImpl implements AuthService {
         });
   }
 
+  /**
+   * {@inheritDoc}
+   *
+   * <p>El token se canjea con {@link RefreshTokenRepository#rotate}, que es atómico: de dos
+   * peticiones con el mismo token solo una se lo queda. Antes se leía, se comprobaba y se
+   * guardaba en pasos sueltos, y las dos podían pasar la comprobación. La que gana revoca el
+   * token y guarda el nuevo en la misma transacción, así que un fallo al guardar el nuevo no
+   * deja la sesión cerrada con el viejo ya gastado.</p>
+   *
+   * <p>La que pierde no es por fuerza un robo. Si el token se rotó hace menos de
+   * {@code refresh-reuse-grace}, es la otra mitad de una carrera —dos pestañas, o la
+   * aplicación instalada y el navegador— y recibe también un par nuevo. Antes esa segunda
+   * petición se tomaba por una copia robada y cerraba la sesión en todos los dispositivos.
+   * Pasado el margen, o si el token se revocó por otra vía, sí es una copia en circulación y
+   * se revocan todos los de la cuenta. El margen es la ventana que se le concede a quien
+   * tuviera una copia: por eso es corto y tiene tope.</p>
+   */
   @Override
   public Mono<AuthResponse> refresh(String refreshToken) {
-    return refreshTokenRepository.findByTokenHash(SecureTokens.hash(refreshToken))
-        .flatMap(this::requireUsableRefreshToken)
+    String tokenHash = SecureTokens.hash(refreshToken);
+    LocalDateTime now = LocalDateTime.now(clock);
+    return transactionalOperator.transactional(
+            refreshTokenRepository.rotate(tokenHash, now)
+                .filter(rotated -> rotated > 0)
+                .flatMap(rotated -> refreshTokenRepository.findByTokenHash(tokenHash))
+                .flatMap(this::issueCredentialsFor))
+        .switchIfEmpty(Mono.defer(() -> refreshTokenRepository.findByTokenHash(tokenHash)
+            .flatMap(token -> resolveUnrotated(token, now))))
         .switchIfEmpty(Mono.error(
-            new InvalidRefreshTokenException(Constants.INVALID_REFRESH_TOKEN)))
-        .flatMap(this::revoke)
-        .flatMap(token -> userRepository.findById(token.getUserId()))
-        .filter(User::isActive)
-        .switchIfEmpty(Mono.error(
-            new InvalidRefreshTokenException(Constants.INVALID_REFRESH_TOKEN)))
-        .flatMap(this::issueCredentials);
+            new InvalidRefreshTokenException(Constants.INVALID_REFRESH_TOKEN)));
   }
 
   @Override
@@ -214,27 +233,57 @@ public class AuthServiceImpl implements AuthService {
   }
 
   /**
-   * Comprueba que un token de refresco sigue sirviendo.
-   * Presentar uno ya consumido no es un descuido: cada renovación entrega uno nuevo, así
-   * que verlo por segunda vez indica que hay una copia en circulación. Como no puede
-   * saberse cuál de las dos partes es la legítima, se revocan todos los del usuario y ambas
-   * tienen que volver a identificarse.
+   * Decide qué hacer con un token que esta petición no ha podido canjear.
+   * Si no está revocado, es que caducó. Si se rotó hace nada, es una renovación concurrente
+   * y se atiende. En cualquier otro caso es un token ya consumido que alguien vuelve a
+   * presentar: como cada renovación entrega uno nuevo, eso indica que hay una copia en
+   * circulación, y como no puede saberse cuál de las dos partes es la legítima, se revocan
+   * todos los del usuario y ambas tienen que volver a identificarse.
    *
    * @param token token localizado por su hash
-   * @return el token si es utilizable, o un error si no lo es
+   * @param now   momento de la renovación
+   * @return credenciales nuevas, vacío si el token caducó, o un error si se reutilizó
    */
-  private Mono<RefreshToken> requireUsableRefreshToken(RefreshToken token) {
-    if (token.isRevoked()) {
-      log.warn("Refresh token reuse detected for user {}; revoking active tokens",
-          token.getUserId());
-      return refreshTokenRepository.revokeAllByUserId(token.getUserId())
-          .then(Mono.error(
-              new InvalidRefreshTokenException(Constants.INVALID_REFRESH_TOKEN)));
-    }
-    if (!token.getExpiresAt().isAfter(LocalDateTime.now(clock))) {
+  private Mono<AuthResponse> resolveUnrotated(RefreshToken token, LocalDateTime now) {
+    if (!token.isRevoked()) {
       return Mono.empty();
     }
-    return Mono.just(token);
+    if (isConcurrentRotation(token, now)) {
+      log.info("Concurrent refresh tolerated for user {}", token.getUserId());
+      return issueCredentialsFor(token);
+    }
+    log.warn("Refresh token reuse detected for user {}; revoking active tokens",
+        token.getUserId());
+    return refreshTokenRepository.revokeAllByUserId(token.getUserId())
+        .then(Mono.error(new InvalidRefreshTokenException(Constants.INVALID_REFRESH_TOKEN)));
+  }
+
+  /**
+   * Indica si un token revocado lo fue por una rotación lo bastante reciente como para
+   * tomar esta petición por la otra mitad de una carrera.
+   *
+   * @param token token revocado
+   * @param now   momento de la renovación
+   * @return si cae dentro del margen de renovación concurrente
+   */
+  private boolean isConcurrentRotation(RefreshToken token, LocalDateTime now) {
+    Duration grace = jwtProperties.refreshReuseGrace();
+    return token.getRotatedAt() != null
+        && !grace.isZero()
+        && token.getExpiresAt().isAfter(now)
+        && !now.isAfter(token.getRotatedAt().plus(grace));
+  }
+
+  /**
+   * Emite credenciales nuevas para el dueño de un token, si su cuenta sigue activa.
+   *
+   * @param token token canjeado
+   * @return las credenciales, o vacío si la cuenta ya no está activa
+   */
+  private Mono<AuthResponse> issueCredentialsFor(RefreshToken token) {
+    return userRepository.findById(token.getUserId())
+        .filter(User::isActive)
+        .flatMap(this::issueCredentials);
   }
 
   /**
@@ -343,13 +392,16 @@ public class AuthServiceImpl implements AuthService {
   }
 
   /**
-   * Marca un token de refresco como revocado.
+   * Marca un token de refresco como revocado al cerrar la sesión.
+   * Borra también la marca de rotación: un token que se cierra a propósito no debe volver a
+   * aceptarse como renovación concurrente, aunque se hubiera rotado segundos antes.
    *
    * @param token token a revocar
    * @return el token ya revocado
    */
   private Mono<RefreshToken> revoke(RefreshToken token) {
     token.setRevoked(true);
+    token.setRotatedAt(null);
     return refreshTokenRepository.save(token);
   }
 

@@ -91,7 +91,8 @@ class AuthServiceImplTest {
   @BeforeEach
   void setUp() {
     JwtProperties jwtProperties = new JwtProperties("clave-de-firma-de-al-menos-32-caracteres",
-        "finscope-api", "finscope-web", Duration.ofMinutes(15), Duration.ofDays(30));
+        "finscope-api", "finscope-web", Duration.ofMinutes(15), Duration.ofDays(30),
+        Duration.ofSeconds(30));
     loginAttemptService = new LoginAttemptService(
         new LoginAttemptProperties(true, 5, Duration.ofSeconds(30), Duration.ofMinutes(15)));
     authService = new AuthServiceImpl(userRepository, userIdentityRepository, categoryService,
@@ -282,50 +283,96 @@ class AuthServiceImplTest {
   }
 
   @Test
-  @DisplayName("Renueva las credenciales y revoca el token de refresco consumido")
-  void refreshesAndRevokesConsumedToken() {
-    RefreshToken stored = refreshToken(false, LocalDateTime.now().plusDays(1));
-    when(refreshTokenRepository.findByTokenHash(anyString())).thenReturn(Mono.just(stored));
-    when(userRepository.findById(USER_ID))
-        .thenReturn(Mono.just(existingUser(passwordEncoder.encode(PASSWORD))));
+  @DisplayName("Canjea el token de forma atómica y guarda el nuevo en la misma transacción")
+  void refreshesRotatingAtomically() {
+    Map<String, Boolean> inTransaction = new ConcurrentHashMap<>();
+    when(refreshTokenRepository.rotate(anyString(), any(LocalDateTime.class)))
+        .thenReturn(Mono.deferContextual(context -> {
+          inTransaction.put("rotate", ContextTransactionalOperator.inTransaction(context));
+          return Mono.just(1L);
+        }));
+    when(refreshTokenRepository.findByTokenHash(anyString())).thenReturn(Mono.just(
+        refreshToken(true, LocalDateTime.now().plusDays(1), LocalDateTime.now())));
+    when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(invocation ->
+        recording(inTransaction, "newToken", () -> invocation.getArgument(0)));
+    givenActiveUser();
 
     StepVerifier.create(authService.refresh("un-token-de-refresco"))
         .assertNext(auth -> assertNotNull(auth.getRefreshToken()))
         .verifyComplete();
 
-    assertTrue(stored.isRevoked());
+    assertEquals(Map.of("rotate", true, "newToken", true), inTransaction);
+    verify(refreshTokenRepository, never()).revokeAllByUserId(anyLong());
   }
 
   @Test
-  @DisplayName("Rechaza un token de refresco ya consumido y revoca los del usuario")
+  @DisplayName("Atiende la segunda de dos renovaciones simultáneas sin revocar la cuenta")
+  void toleratesConcurrentRefresh() {
+    when(refreshTokenRepository.rotate(anyString(), any(LocalDateTime.class)))
+        .thenReturn(Mono.just(0L));
+    when(refreshTokenRepository.findByTokenHash(anyString())).thenReturn(Mono.just(
+        refreshToken(true, LocalDateTime.now().plusDays(1), LocalDateTime.now().minusSeconds(5))));
+    givenActiveUser();
+
+    StepVerifier.create(authService.refresh("un-token-de-refresco"))
+        .assertNext(auth -> assertNotNull(auth.getRefreshToken()))
+        .verifyComplete();
+
+    verify(refreshTokenRepository, never()).revokeAllByUserId(anyLong());
+  }
+
+  @Test
+  @DisplayName("Rechaza un token rotado fuera del margen y revoca los del usuario")
   void rejectsAlreadyUsedRefreshToken() {
-    when(refreshTokenRepository.findByTokenHash(anyString()))
-        .thenReturn(Mono.just(refreshToken(true, LocalDateTime.now().plusDays(1))));
+    when(refreshTokenRepository.rotate(anyString(), any(LocalDateTime.class)))
+        .thenReturn(Mono.just(0L));
+    when(refreshTokenRepository.findByTokenHash(anyString())).thenReturn(Mono.just(
+        refreshToken(true, LocalDateTime.now().plusDays(1), LocalDateTime.now().minusMinutes(5))));
     when(refreshTokenRepository.revokeAllByUserId(USER_ID)).thenReturn(Mono.just(2L));
 
     StepVerifier.create(authService.refresh("un-token-de-refresco"))
         .expectError(InvalidRefreshTokenException.class)
         .verify();
 
-    // Ver dos veces el mismo token significa que hay una copia suelta: se corta el acceso
-    // a todas, porque no puede saberse cual de las dos partes es la legitima.
     verify(refreshTokenRepository).revokeAllByUserId(USER_ID);
   }
 
   @Test
-  @DisplayName("Rechaza un token de refresco caducado")
-  void rejectsExpiredRefreshToken() {
+  @DisplayName("Un token cerrado con la sesión no se acepta aunque sea reciente")
+  void rejectsRecentlyLoggedOutToken() {
+    when(refreshTokenRepository.rotate(anyString(), any(LocalDateTime.class)))
+        .thenReturn(Mono.just(0L));
     when(refreshTokenRepository.findByTokenHash(anyString()))
-        .thenReturn(Mono.just(refreshToken(false, LocalDateTime.now().minusMinutes(1))));
+        .thenReturn(Mono.just(refreshToken(true, LocalDateTime.now().plusDays(1), null)));
+    when(refreshTokenRepository.revokeAllByUserId(USER_ID)).thenReturn(Mono.just(1L));
 
     StepVerifier.create(authService.refresh("un-token-de-refresco"))
         .expectError(InvalidRefreshTokenException.class)
         .verify();
+
+    verify(refreshTokenRepository).revokeAllByUserId(USER_ID);
+  }
+
+  @Test
+  @DisplayName("Rechaza un token de refresco caducado sin revocar la cuenta")
+  void rejectsExpiredRefreshToken() {
+    when(refreshTokenRepository.rotate(anyString(), any(LocalDateTime.class)))
+        .thenReturn(Mono.just(0L));
+    when(refreshTokenRepository.findByTokenHash(anyString())).thenReturn(Mono.just(
+        refreshToken(false, LocalDateTime.now().minusMinutes(1), null)));
+
+    StepVerifier.create(authService.refresh("un-token-de-refresco"))
+        .expectError(InvalidRefreshTokenException.class)
+        .verify();
+
+    verify(refreshTokenRepository, never()).revokeAllByUserId(anyLong());
   }
 
   @Test
   @DisplayName("Rechaza un token de refresco desconocido")
   void rejectsUnknownRefreshToken() {
+    when(refreshTokenRepository.rotate(anyString(), any(LocalDateTime.class)))
+        .thenReturn(Mono.just(0L));
     when(refreshTokenRepository.findByTokenHash(anyString())).thenReturn(Mono.empty());
 
     StepVerifier.create(authService.refresh("un-token-de-refresco"))
@@ -334,14 +381,16 @@ class AuthServiceImplTest {
   }
 
   @Test
-  @DisplayName("Revoca el token de refresco al cerrar sesión")
+  @DisplayName("Revoca el token al cerrar sesión y le quita la marca de rotación")
   void revokesTokenOnLogout() {
-    RefreshToken stored = refreshToken(false, LocalDateTime.now().plusDays(1));
+    RefreshToken stored =
+        refreshToken(true, LocalDateTime.now().plusDays(1), LocalDateTime.now());
     when(refreshTokenRepository.findByTokenHash(anyString())).thenReturn(Mono.just(stored));
 
     StepVerifier.create(authService.logout("un-token-de-refresco")).verifyComplete();
 
     assertTrue(stored.isRevoked());
+    assertNull(stored.getRotatedAt());
   }
 
   @Test
@@ -486,11 +535,22 @@ class AuthServiceImplTest {
   /**
    * Construye un token de refresco persistido con el estado indicado.
    *
-   * @param revoked   indica si el token ya fue consumido
+   * @param revoked   indica si el token ya fue revocado
    * @param expiresAt momento en que el token caduca
+   * @param rotatedAt momento en que se canjeó por otro, o nulo si no fue por rotación
    * @return el token de refresco
    */
-  private RefreshToken refreshToken(boolean revoked, LocalDateTime expiresAt) {
-    return new RefreshToken(1L, USER_ID, "hash", expiresAt, revoked, LocalDateTime.now());
+  private RefreshToken refreshToken(boolean revoked, LocalDateTime expiresAt,
+                                    LocalDateTime rotatedAt) {
+    return new RefreshToken(1L, USER_ID, "hash", expiresAt, revoked, LocalDateTime.now(),
+        rotatedAt);
+  }
+
+  /**
+   * Hace que el dueño de los tokens exista y siga activo.
+   */
+  private void givenActiveUser() {
+    when(userRepository.findById(USER_ID))
+        .thenReturn(Mono.just(existingUser(passwordEncoder.encode(PASSWORD))));
   }
 }

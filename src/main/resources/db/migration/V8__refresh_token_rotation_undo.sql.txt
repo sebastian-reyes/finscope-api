@@ -1,0 +1,12 @@
+-- Reverso de V8__refresh_token_rotation.sql.
+--
+-- No lo aplica Flyway: se guarda como texto para poder deshacer el cambio a mano si hiciera
+-- falta, igual que el resto de reversos del proyecto.
+--
+-- No se pierde ninguna sesion: los tokens siguen vigentes o revocados como estaban. Lo unico
+-- que desaparece es la tolerancia a dos renovaciones simultaneas, que vuelve a cerrar la
+-- sesion en todos los dispositivos. Antes de aplicarlo hay que volver al codigo anterior, que
+-- no lee la columna.
+
+ALTER TABLE refresh_tokens
+    DROP COLUMN IF EXISTS rotated_at;
