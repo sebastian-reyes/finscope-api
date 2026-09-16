@@ -140,6 +140,8 @@ RUN set -eu; \
     export DB_USERNAME=entrenamiento DB_PASSWORD=entrenamiento; \
     export JWT_SECRET="valor-falso-solo-para-entrenar-la-cache-aot"; \
     export CORS_ALLOWED_ORIGINS="https://entrenamiento.invalid"; \
+    export MAIL_FROM="FinScope <no-reply@entrenamiento.invalid>"; \
+    export APP_BASE_URL="https://entrenamiento.invalid"; \
     java -XX:MaxRAM=${TARGET_RAM_BYTES} ${JVM_OPTS} \
       -XX:AOTCacheOutput=app.aot -Dspring.context.exit=onRefresh -jar app.jar; \
     java -XX:MaxRAM=${TARGET_RAM_BYTES} ${JVM_OPTS} \

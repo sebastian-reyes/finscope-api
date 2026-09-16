@@ -1,9 +1,13 @@
 # Configuracion de produccion.
 #
-# Ningun valor sensible o dependiente del entorno tiene defecto a proposito: si falta una
-# variable la aplicacion no arranca, que es preferible a que arranque apuntando a otro sitio
-# o firmando con una clave conocida. Todo lo que hay aqui son referencias a variables de
-# entorno; el archivo puede vivir en el repositorio sin contener ningun secreto.
+# Ningun valor sensible o dependiente del entorno tiene defecto a proposito. Todo lo que hay
+# aqui son referencias a variables de entorno; el archivo puede vivir en el repositorio sin
+# contener ningun secreto.
+#
+# OJO: que falte la variable NO basta para que la aplicacion no arranque. Spring enlaza el
+# marcador sin resolver como texto, de modo que finscope.mail.app-base-url vale literalmente
+# "${APP_BASE_URL}". Lo que impide arrancar es la validacion de cada clase de propiedades
+# (JwtProperties, MailProperties), asi que cada valor obligatorio nuevo necesita la suya.
 spring:
   r2dbc:
     # Se admiten las dos formas: DB_URL completa --- que es lo que suele entregar un

@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NullMarked;
 import org.springframework.core.Ordered;
@@ -43,6 +44,20 @@ public class RateLimitWebFilter implements WebFilter {
   private static final String AUTH_PATH_PREFIX = "/auth/";
 
   /**
+   * Rutas bajo {@code /auth/} que no obtienen credenciales ni envían correo, sino que leen o
+   * editan el perfil de quien ya tiene sesión. Van al cupo general, separado por credencial:
+   * la aplicación vuelve a pedir el perfil cada vez que recupera el foco, y con el cupo
+   * estricto por dirección los usuarios que salen a internet por la misma IP —una red móvil
+   * con CGNAT, una oficina— se lo agotaban entre ellos.
+   */
+  private static final Set<String> PROFILE_PATHS = Set.of("/auth/me");
+
+  /**
+   * Clave común para las peticiones cuyo origen no puede determinarse.
+   */
+  private static final String UNKNOWN_CLIENT = "unknown";
+
+  /**
    * Bytes del resumen que se conservan para distinguir credenciales.
    */
   private static final int FINGERPRINT_BYTES = 8;
@@ -75,7 +90,7 @@ public class RateLimitWebFilter implements WebFilter {
       return chain.filter(exchange);
     }
     String path = exchange.getRequest().getPath().value();
-    boolean auth = path.startsWith(AUTH_PATH_PREFIX);
+    boolean auth = path.startsWith(AUTH_PATH_PREFIX) && !PROFILE_PATHS.contains(path);
     FixedWindowRateLimiter limiter = auth ? authLimiter : apiLimiter;
     FixedWindowRateLimiter.Decision decision =
         limiter.tryConsume(key(exchange, auth), System.currentTimeMillis());
@@ -134,18 +149,29 @@ public class RateLimitWebFilter implements WebFilter {
 
   /**
    * Obtiene la dirección de origen de la petición.
-   * Se toma de la conexión y no de una cabecera de la petición: {@code X-Forwarded-For} lo
-   * escribe cualquiera, y confiar en ella permitiría saltarse el cupo cambiando de valor en
-   * cada intento. Tras un proxy inverso es este quien debe reescribir la dirección, algo
-   * que Spring resuelve con {@code server.forward-headers-strategy}.
+   * Se toma de la dirección remota y no de una cabecera leída aquí: {@code X-Forwarded-For}
+   * lo escribe cualquiera. Tras un proxy inverso es Spring quien la reescribe con
+   * {@code server.forward-headers-strategy}, tomando el primer valor de la cabecera, que en
+   * Render es la dirección real del cliente porque la plataforma lo fija ella.
+   *
+   * <p>Esa dirección reescrita llega <em>sin resolver</em>: Spring la construye con
+   * {@code InetSocketAddress.createUnresolved}, así que {@code getAddress()} devuelve nulo y
+   * solo {@code getHostString()} la conserva. Leer únicamente la resuelta metía a todos los
+   * clientes de producción en la misma clave y convertía el cupo de autenticación en uno
+   * global: veinte peticiones por minuto para todo el mundo junto.</p>
    *
    * @param exchange intercambio HTTP en curso
    * @return la dirección de origen, o un valor común si no puede determinarse
    */
   private String clientAddress(ServerWebExchange exchange) {
     InetSocketAddress remote = exchange.getRequest().getRemoteAddress();
-    return remote == null || remote.getAddress() == null
-        ? "unknown"
-        : remote.getAddress().getHostAddress();
+    if (remote == null) {
+      return UNKNOWN_CLIENT;
+    }
+    if (remote.getAddress() != null) {
+      return remote.getAddress().getHostAddress();
+    }
+    String host = remote.getHostString();
+    return host == null || host.isBlank() ? UNKNOWN_CLIENT : host;
   }
 }
