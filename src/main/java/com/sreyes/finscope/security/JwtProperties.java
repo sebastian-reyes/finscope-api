@@ -14,6 +14,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param audience        destinatario que se registra en los tokens
  * @param accessTokenTtl  validez del token de acceso
  * @param refreshTokenTtl validez del token de refresco
+ * @param refreshReuseGrace margen durante el que un token recién rotado todavía se acepta, para
+ *                        que dos renovaciones simultáneas con el mismo token no se tomen por
+ *                        un robo; cero lo desactiva
  */
 @ConfigurationProperties(prefix = "finscope.security.jwt")
 public record JwtProperties(
@@ -21,13 +24,26 @@ public record JwtProperties(
     String issuer,
     String audience,
     Duration accessTokenTtl,
-    Duration refreshTokenTtl) {
+    Duration refreshTokenTtl,
+    Duration refreshReuseGrace) {
 
   /**
    * Longitud mínima de la clave para que HS256 conserve la fuerza del algoritmo.
    * Una clave más corta que el propio digest deja la firma por debajo de sus 256 bits.
    */
   private static final int MIN_SECRET_BYTES = 32;
+
+  /**
+   * Margen por defecto para las renovaciones concurrentes. Cubre de sobra dos pestañas que
+   * despiertan a la vez o una red móvil lenta.
+   */
+  private static final Duration DEFAULT_REFRESH_REUSE_GRACE = Duration.ofSeconds(30);
+
+  /**
+   * Tope del margen. Durante ese tiempo un token rotado sigue sirviendo sin disparar la
+   * detección de robo, así que alargarlo es abrir esa ventana a quien tenga una copia.
+   */
+  private static final Duration MAX_REFRESH_REUSE_GRACE = Duration.ofMinutes(2);
 
   /**
    * Comprueba al arrancar que la configuración de los tokens es utilizable.
@@ -53,6 +69,15 @@ public record JwtProperties(
     if (refreshTokenTtl == null || refreshTokenTtl.isZero() || refreshTokenTtl.isNegative()) {
       throw new IllegalStateException(
           "finscope.security.jwt.refresh-token-ttl must be a positive duration");
+    }
+    if (refreshReuseGrace == null) {
+      refreshReuseGrace = DEFAULT_REFRESH_REUSE_GRACE;
+    }
+    if (refreshReuseGrace.isNegative()
+        || refreshReuseGrace.compareTo(MAX_REFRESH_REUSE_GRACE) > 0) {
+      throw new IllegalStateException(
+          "finscope.security.jwt.refresh-reuse-grace must be between 0 and "
+              + MAX_REFRESH_REUSE_GRACE.toSeconds() + " seconds");
     }
   }
 }

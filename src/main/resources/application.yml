@@ -64,6 +64,9 @@ finscope:
       audience: ${JWT_AUDIENCE:finscope-web}
       access-token-ttl: ${JWT_ACCESS_TOKEN_TTL:15m}
       refresh-token-ttl: ${JWT_REFRESH_TOKEN_TTL:30d}
+      # Un token recien rotado se sigue aceptando este tiempo: dos pestanas que renuevan a la
+      # vez con el mismo token no son un robo. Pasado el margen, reusarlo revoca la cuenta.
+      refresh-reuse-grace: ${JWT_REFRESH_REUSE_GRACE:30s}
     cors:
       max-age: ${CORS_MAX_AGE:1h}
     rate-limit:
