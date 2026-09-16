@@ -64,9 +64,6 @@ public class TransactionSummaryServiceImpl implements TransactionSummaryService 
             transactionSummaryRepository.totalsByType(userId, criteria, range).collectList(),
             transactionSummaryRepository.totalsByCategory(userId, criteria, range).collectList(),
             transactionSummaryRepository.totalsByTag(userId, criteria, range).collectList(),
-            // Sin el filtro de moneda a proposito: de este agregado sale que monedas hay
-            // en el periodo, y acotarlo por la que se esta mirando lo dejaria contestando
-            // siempre que solo existe esa.
             transactionSummaryRepository
                 .totalsByCurrency(userId, criteria.withoutCurrency(), range).collectList()))
         .map(totals -> buildSummary(totals.getT1(), totals.getT2(), totals.getT3(),
@@ -187,7 +184,6 @@ public class TransactionSummaryServiceImpl implements TransactionSummaryService 
   private List<TagSummaryResponse> buildTagSummaries(List<AmountTotal> byTag) {
     Map<String, List<AmountTotal>> grouped = new LinkedHashMap<>();
     for (AmountTotal total : byTag) {
-      // La clave admite el nulo de las transacciones sin tag, que forman su propio grupo.
       grouped.computeIfAbsent(total.tagName(), name -> new ArrayList<>()).add(total);
     }
     List<TagSummaryResponse> summaries = new ArrayList<>();

@@ -64,16 +64,12 @@ public class BudgetServiceImpl implements BudgetService {
   public Mono<BudgetProgress> createBudget(Long userId, Long categoryId, Integer month,
                                            Integer year, Currency currency, BigDecimal amount) {
     String code = CurrencyRules.orBase(currency).getValue();
-    // Resolver el rango antes de escribir valida de paso el mes: uno fuera de rango falla
-    // aquí y no después de haber insertado la fila.
     return resolveMonth(month, year)
         .flatMap(range -> requireBudgetableCategory(userId, categoryId)
             .flatMap(category -> budgetRepository
                 .insertIfAbsent(userId, categoryId, month, year, code, amount)
                 .filter(inserted -> inserted > 0)
                 .switchIfEmpty(Mono.error(alreadySet(category.getName())))
-                // Diferido: sin esto la consulta se arma aunque la inserción no llegue a
-                // escribir nada y el flujo termine en el conflicto de arriba.
                 .then(Mono.defer(() -> budgetRepository.findByCategoryAndPeriod(userId,
                     categoryId, month, year, code))))
             .flatMap(budget -> budgetRepository.findProgressById(userId, budget.getId(),
@@ -105,8 +101,6 @@ public class BudgetServiceImpl implements BudgetService {
   @Override
   public Flux<BudgetProgress> copyBudgets(Long userId, Integer sourceMonth, Integer sourceYear,
                                           Integer month, Integer year) {
-    // Los dos meses se validan antes de escribir nada, aunque solo el destino se consulte
-    // después: copiar desde un mes imposible es un error de la petición, no una copia vacía.
     return resolveMonth(sourceMonth, sourceYear)
         .then(resolveMonth(month, year))
         .flatMapMany(range -> budgetRepository

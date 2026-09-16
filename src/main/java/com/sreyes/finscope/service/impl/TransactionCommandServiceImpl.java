@@ -28,6 +28,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Mono;
 
 /**
@@ -55,14 +56,12 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
   private final Clock clock;
 
   @Override
+  @Transactional
   public Mono<Transaction> createTransaction(Long userId, CreateTransactionRequest request) {
     List<String> tags = TagRules.normalize(request.getTags());
     return requireTransactionType(request.getTransactionTypeId())
         .flatMap(type -> requireUsableCategory(userId, request.getCategoryId(), type))
         .then(Mono.defer(() -> {
-          // Dentro del flujo y no antes de montarlo: un fallo aqui tiene que viajar como
-          // error del Mono, igual que el del tipo o el de la categoria, y no escaparse
-          // mientras el llamante todavia esta construyendo la cadena.
           CurrencyRules.validate(CurrencyRules.orBase(request.getCurrency()),
               request.getExchangeRate());
           return transactionRepository.save(toEntity(userId, request));
@@ -71,6 +70,7 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
   }
 
   @Override
+  @Transactional
   public Mono<Transaction> updateTransaction(Long userId, Long id,
                                              UpdateTransactionRequest request) {
     List<String> tags = TagRules.normalize(request.getTags());

@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -78,7 +79,6 @@ public class CategoryServiceImpl implements CategoryService {
             scope.getValue(), false)))
         .then(Mono.defer(() -> categoryRepository.findByUserIdAndName(userId, trimmed)))
         .switchIfEmpty(Mono.error(alreadyUsed(trimmed)))
-        // Una categoría recién creada todavía no puede clasificar nada.
         .map(category -> new CategoryUsage(category.getId(), category.getName(),
             category.getAppliesTo(), category.isSystem(), 0L));
   }
@@ -114,6 +114,7 @@ public class CategoryServiceImpl implements CategoryService {
    * puede tener dos en el mismo mes.</p>
    */
   @Override
+  @Transactional
   public Mono<Void> deleteCategory(Long userId, Long id) {
     return requireCategory(userId, id)
         .flatMap(category -> category.isSystem()
@@ -129,7 +130,6 @@ public class CategoryServiceImpl implements CategoryService {
 
   @Override
   public Mono<Void> seedDefaults(Long userId) {
-    // La de reserva primero: es la que sostiene el borrado de todas las demás.
     return resolveFallback(userId)
         .thenMany(Flux.fromIterable(DEFAULTS))
         .concatMap(seed -> categoryRepository.insertIfAbsent(userId, seed.name(),

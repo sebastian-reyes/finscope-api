@@ -32,6 +32,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.reactive.TransactionalOperator;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -63,6 +64,7 @@ public class AuthServiceImpl implements AuthService {
   private final PasswordEncoder passwordEncoder;
   private final LoginAttemptService loginAttemptService;
   private final Clock clock;
+  private final TransactionalOperator transactionalOperator;
   private final SecureRandom secureRandom = new SecureRandom();
 
   /**
@@ -88,12 +90,27 @@ public class AuthServiceImpl implements AuthService {
         Base64.getUrlEncoder().withoutPadding().encodeToString(filler));
   }
 
+  /**
+   * {@inheritDoc}
+   *
+   * <p>El alta es atómica: usuario, identidad local y catálogo de categorías se escriben en
+   * una sola transacción. Antes, un fallo a mitad dejaba una cuenta con contraseña pero sin
+   * categorías, que no podía registrar ningún movimiento, y al reintentar el alta respondía
+   * que el correo ya estaba ocupado.</p>
+   *
+   * <p>Quedan fuera dos cosas, a propósito. El hash de la contraseña, que es lento a
+   * propósito y retendría una conexión del pool mientras se calcula. Y el correo de
+   * verificación: no condiciona el alta, y dentro de la transacción un fallo al guardar su
+   * enlace abortaría en Postgres todo lo demás aunque aquí se ignore el error.</p>
+   */
   @Override
   public Mono<AuthResponse> register(RegisterRequest request) {
     String email = request.getEmail().trim();
-    return userRepository.findByEmailIgnoreCase(email)
-        .flatMap(existing -> claimSeededAccount(existing, request))
-        .switchIfEmpty(Mono.defer(() -> createUser(email, request)))
+    return encodePassword(request.getPassword())
+        .flatMap(passwordHash -> transactionalOperator.transactional(
+            userRepository.findByEmailIgnoreCase(email)
+                .flatMap(existing -> claimSeededAccount(existing, request, passwordHash))
+                .switchIfEmpty(Mono.defer(() -> createUser(email, request, passwordHash)))))
         .flatMap(this::sendEmailVerification)
         .flatMap(this::issueCredentials);
   }
@@ -223,25 +240,20 @@ public class AuthServiceImpl implements AuthService {
   /**
    * Da de alta un usuario nuevo junto con su identidad local.
    *
-   * @param email   correo ya normalizado
-   * @param request datos de alta del usuario
+   * @param email        correo ya normalizado
+   * @param request      datos de alta del usuario
+   * @param passwordHash hash de la contraseña, ya calculado
    * @return el usuario recién creado
    */
-  private Mono<User> createUser(String email, RegisterRequest request) {
-    return encodePassword(request.getPassword())
-        .map(passwordHash -> {
-          User user = new User();
-          user.setEmail(email);
-          user.setPasswordHash(passwordHash);
-          user.setDisplayName(normaliseDisplayName(request.getDisplayName()));
-          user.setActive(true);
-          user.setCreatedAt(LocalDateTime.now(clock));
-          return user;
-        })
-        .flatMap(userRepository::save)
+  private Mono<User> createUser(String email, RegisterRequest request, String passwordHash) {
+    User user = new User();
+    user.setEmail(email);
+    user.setPasswordHash(passwordHash);
+    user.setDisplayName(normaliseDisplayName(request.getDisplayName()));
+    user.setActive(true);
+    user.setCreatedAt(LocalDateTime.now(clock));
+    return userRepository.save(user)
         .flatMap(saved -> saveLocalIdentity(saved).thenReturn(saved))
-        // La categoría es obligatoria en cada movimiento, así que una cuenta sin catálogo
-        // no podría registrar ninguno: se siembra aquí, antes de devolver las credenciales.
         .flatMap(saved -> categoryService.seedDefaults(saved.getId()).thenReturn(saved));
   }
 
@@ -251,24 +263,22 @@ public class AuthServiceImpl implements AuthService {
    * multiusuario: quien se registra con ese correo la reclama en lugar de recibir un
    * conflicto. Si la cuenta ya tiene contraseña, el correo está ocupado.
    *
-   * @param user    cuenta existente para ese correo
-   * @param request datos de alta del usuario
+   * @param user         cuenta existente para ese correo
+   * @param request      datos de alta del usuario
+   * @param passwordHash hash de la contraseña, ya calculado
    * @return la cuenta con sus credenciales ya establecidas
    */
-  private Mono<User> claimSeededAccount(User user, RegisterRequest request) {
+  private Mono<User> claimSeededAccount(User user, RegisterRequest request,
+                                        String passwordHash) {
     if (user.getPasswordHash() != null) {
       return Mono.error(
           new EmailAlreadyRegisteredException(Constants.EMAIL_ALREADY_REGISTERED));
     }
-    return encodePassword(request.getPassword())
-        .map(passwordHash -> {
-          user.setPasswordHash(passwordHash);
-          if (request.getDisplayName() != null) {
-            user.setDisplayName(normaliseDisplayName(request.getDisplayName()));
-          }
-          return user;
-        })
-        .flatMap(userRepository::save);
+    user.setPasswordHash(passwordHash);
+    if (request.getDisplayName() != null) {
+      user.setDisplayName(normaliseDisplayName(request.getDisplayName()));
+    }
+    return userRepository.save(user);
   }
 
   /**

@@ -33,6 +33,8 @@ import com.sreyes.finscope.service.MailService;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -91,7 +93,7 @@ class AccountServiceImplTest {
         passwordEncoder,
         new LoginAttemptService(
             new LoginAttemptProperties(true, 5, Duration.ofSeconds(30), Duration.ofMinutes(15))),
-        Clock.systemDefaultZone());
+        Clock.systemDefaultZone(), new ContextTransactionalOperator());
 
     when(accountTokenRepository.deleteByUserIdAndPurpose(anyLong(), anyString()))
         .thenReturn(Mono.just(0L));
@@ -280,6 +282,27 @@ class AccountServiceImplTest {
   }
 
   @Test
+  @DisplayName("El cambio de correo mueve cuenta e identidad juntas; el enlace se quema aparte")
+  void confirmsEmailChangeAtomically() {
+    Map<String, Boolean> inTransaction = new ConcurrentHashMap<>();
+    givenToken(AccountToken.EMAIL_CHANGE, NEW_EMAIL, LocalDateTime.now().plusHours(1), null);
+    recordSaves(inTransaction);
+    when(userRepository.findById(USER_ID)).thenReturn(Mono.just(user(false)));
+    when(userRepository.findByEmailIgnoreCase(NEW_EMAIL)).thenReturn(Mono.empty());
+    when(userIdentityRepository.findByProviderAndSubject(UserIdentity.LOCAL_PROVIDER, EMAIL))
+        .thenReturn(Mono.just(localIdentity()));
+    when(userIdentityRepository.save(any(UserIdentity.class))).thenAnswer(invocation ->
+        Mono.deferContextual(context -> {
+          inTransaction.put("identity", ContextTransactionalOperator.inTransaction(context));
+          return Mono.just(invocation.getArgument(0));
+        }));
+
+    StepVerifier.create(accountService.confirmEmailChange(LINK)).verifyComplete();
+
+    assertEquals(Map.of("link", false, "user", true, "identity", true), inTransaction);
+  }
+
+  @Test
   @DisplayName("Confirmar el cambio falla si la dirección se ocupó mientras tanto")
   void rejectsEmailChangeTakenMeanwhile() {
     givenToken(AccountToken.EMAIL_CHANGE, NEW_EMAIL, LocalDateTime.now().plusHours(1), null);
@@ -339,6 +362,43 @@ class AccountServiceImplTest {
     assertFalse(passwordEncoder.matches(PASSWORD, saved.getPasswordHash()));
     assertTrue(saved.isEmailVerified());
     verify(refreshTokenRepository).revokeAllByUserId(USER_ID);
+  }
+
+  @Test
+  @DisplayName("La contraseña nueva y el cierre de sesiones van juntos; el enlace se quema aparte")
+  void resetsPasswordAtomically() {
+    Map<String, Boolean> inTransaction = new ConcurrentHashMap<>();
+    givenToken(AccountToken.PASSWORD_RESET, null, LocalDateTime.now().plusHours(1), null);
+    recordSaves(inTransaction);
+    when(userRepository.findById(USER_ID)).thenReturn(Mono.just(user(false)));
+    when(refreshTokenRepository.revokeAllByUserId(anyLong())).thenReturn(
+        Mono.deferContextual(context -> {
+          inTransaction.put("sessions", ContextTransactionalOperator.inTransaction(context));
+          return Mono.just(1L);
+        }));
+
+    StepVerifier.create(accountService.resetPassword(resetRequest())).verifyComplete();
+
+    assertEquals(Map.of("link", false, "user", true, "sessions", true), inTransaction);
+  }
+
+  /**
+   * Anota, para el enlace consumido y el usuario guardado, si se escribieron dentro de la
+   * transacción.
+   *
+   * @param calls dónde anotar cada escritura
+   */
+  private void recordSaves(Map<String, Boolean> calls) {
+    when(accountTokenRepository.save(any(AccountToken.class))).thenAnswer(invocation ->
+        Mono.deferContextual(context -> {
+          calls.put("link", ContextTransactionalOperator.inTransaction(context));
+          return Mono.just(invocation.getArgument(0));
+        }));
+    when(userRepository.save(any(User.class))).thenAnswer(invocation ->
+        Mono.deferContextual(context -> {
+          calls.put("user", ContextTransactionalOperator.inTransaction(context));
+          return Mono.just(invocation.getArgument(0));
+        }));
   }
 
   /**

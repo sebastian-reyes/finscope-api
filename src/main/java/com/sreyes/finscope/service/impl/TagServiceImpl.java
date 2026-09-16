@@ -11,6 +11,7 @@ import com.sreyes.finscope.service.TagService;
 import com.sreyes.finscope.util.constants.Constants;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -42,7 +43,6 @@ public class TagServiceImpl implements TagService {
         .then(Mono.defer(() -> tagRepository.insertIfAbsent(userId, trimmed)))
         .then(Mono.defer(() -> tagRepository.findByUserIdAndName(userId, trimmed)))
         .switchIfEmpty(Mono.error(alreadyUsed(trimmed)))
-        // Un tag recién creado todavía no puede estar en ninguna transacción.
         .map(tag -> new TagUsage(tag.getId(), tag.getName(), 0L));
   }
 
@@ -66,6 +66,7 @@ public class TagServiceImpl implements TagService {
    * desaparecen, solo dejan de estar clasificados por él.</p>
    */
   @Override
+  @Transactional
   public Mono<Void> deleteTag(Long userId, Long id) {
     return requireTag(userId, id)
         .flatMap(tag -> transactionTagRepository.deleteByTagId(tag.getId())

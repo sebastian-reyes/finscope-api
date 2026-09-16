@@ -34,6 +34,9 @@ import com.sreyes.finscope.service.CategoryService;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -93,7 +96,7 @@ class AuthServiceImplTest {
         new LoginAttemptProperties(true, 5, Duration.ofSeconds(30), Duration.ofMinutes(15)));
     authService = new AuthServiceImpl(userRepository, userIdentityRepository, categoryService,
         accountService, refreshTokenRepository, jwtService, jwtProperties, passwordEncoder,
-        loginAttemptService, Clock.systemDefaultZone());
+        loginAttemptService, Clock.systemDefaultZone(), new ContextTransactionalOperator());
     authService.initDummyPasswordHash();
     // Toda cuenta nace con su catálogo: sin él no podría registrar ni un movimiento.
     when(categoryService.seedDefaults(anyLong())).thenReturn(Mono.empty());
@@ -122,6 +125,38 @@ class AuthServiceImplTest {
         })
         .verifyComplete();
 
+  }
+
+  @Test
+  @DisplayName("El alta escribe usuario, identidad y catálogo en una transacción; el correo va fuera")
+  void registersAtomicallyWithEmailOutside() {
+    Map<String, Boolean> inTransaction = new ConcurrentHashMap<>();
+    when(userRepository.findByEmailIgnoreCase(EMAIL)).thenReturn(Mono.empty());
+    when(userRepository.save(any(User.class))).thenAnswer(invocation -> recording(
+        inTransaction, "user", () -> {
+          User user = invocation.getArgument(0);
+          user.setId(USER_ID);
+          return user;
+        }));
+    when(userIdentityRepository.save(any(UserIdentity.class))).thenAnswer(invocation ->
+        recording(inTransaction, "identity", () -> invocation.getArgument(0)));
+    when(categoryService.seedDefaults(anyLong())).thenReturn(
+        Mono.deferContextual(context -> {
+          inTransaction.put("categories", ContextTransactionalOperator.inTransaction(context));
+          return Mono.empty();
+        }));
+    when(accountService.sendEmailVerification(any())).thenReturn(
+        Mono.deferContextual(context -> {
+          inTransaction.put("verification", ContextTransactionalOperator.inTransaction(context));
+          return Mono.empty();
+        }));
+
+    StepVerifier.create(authService.register(registerRequest()))
+        .expectNextCount(1)
+        .verifyComplete();
+
+    assertEquals(Map.of("user", true, "identity", true, "categories", true,
+        "verification", false), inTransaction);
   }
 
   @Test
@@ -400,6 +435,14 @@ class AuthServiceImplTest {
    * Configura el alta de un correo que todavía no existe, devolviendo el usuario ya
    * identificado al guardarlo.
    */
+  private static <T> Mono<T> recording(Map<String, Boolean> calls, String name,
+                                       Supplier<T> value) {
+    return Mono.deferContextual(context -> {
+      calls.put(name, ContextTransactionalOperator.inTransaction(context));
+      return Mono.just(value.get());
+    });
+  }
+
   private void givenNoUserWithEmail() {
     when(userRepository.findByEmailIgnoreCase(EMAIL)).thenReturn(Mono.empty());
     when(userRepository.save(any(User.class))).thenAnswer(invocation -> {

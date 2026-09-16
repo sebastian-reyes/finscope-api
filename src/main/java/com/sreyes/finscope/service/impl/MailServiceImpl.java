@@ -127,9 +127,6 @@ public class MailServiceImpl implements MailService {
         helper.setFrom(properties.from());
         helper.setTo(to);
         helper.setSubject(subject);
-        // Las dos versiones del cuerpo van juntas en el mismo mensaje: el cliente de correo
-        // se queda con la que sepa pintar, y la de texto es además la que acaba leyéndose en
-        // los que bloquean el HTML por defecto.
         helper.setText(text(html), html);
         sender.send(message);
         log.info("Sent account email to {}", to);

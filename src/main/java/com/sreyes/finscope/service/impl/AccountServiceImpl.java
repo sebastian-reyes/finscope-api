@@ -25,6 +25,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.reactive.TransactionalOperator;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -55,12 +56,11 @@ public class AccountServiceImpl implements AccountService {
   private final PasswordEncoder passwordEncoder;
   private final LoginAttemptService loginAttemptService;
   private final Clock clock;
+  private final TransactionalOperator transactionalOperator;
 
   @Override
   public Mono<Void> sendEmailVerification(Long userId) {
     return userRepository.findById(userId)
-        // Sobre una cuenta ya verificada no hay nada que mandar. No es un error: reenviar es
-        // un botón que el usuario puede pulsar dos veces, y la segunda no debería quejarse.
         .filter(user -> !user.isEmailVerified())
         .flatMap(user -> issue(user.getId(), AccountToken.EMAIL_VERIFICATION, null,
             mailProperties.verificationTtl())
@@ -94,9 +94,6 @@ public class AccountServiceImpl implements AccountService {
               mailProperties.emailChangeTtl())
               .flatMap(token -> dispatch(mailService.sendEmailChange(
                   email, user.getDisplayName(), token))
-                  // El aviso a la dirección de siempre se manda aparte y no encadenado al
-                  // anterior: es el único modo en que el dueño legítimo se entera de un
-                  // cambio que no ha pedido, así que no puede depender de que el otro salga.
                   .then(dispatch(mailService.sendEmailChangeNotice(
                       user.getEmail(), user.getDisplayName(), email)))))
           .then();
@@ -106,25 +103,20 @@ public class AccountServiceImpl implements AccountService {
   @Override
   public Mono<Void> confirmEmailChange(String token) {
     return consume(token, AccountToken.EMAIL_CHANGE)
-        .flatMap(consumed -> userRepository.findById(consumed.getUserId())
-            .flatMap(user -> applyEmailChange(user, consumed.getTargetEmail())))
+        .flatMap(consumed -> transactionalOperator.transactional(
+            userRepository.findById(consumed.getUserId())
+                .flatMap(user -> applyEmailChange(user, consumed.getTargetEmail()))))
         .then();
   }
 
   @Override
   public Mono<Void> requestPasswordReset(String email) {
     return Mono.defer(() -> userRepository.findByEmailIgnoreCase(email.trim())
-        // Una cuenta sin contraseña no tiene ninguna que recuperar: es la sembrada al
-        // adoptar los datos anteriores al modelo multiusuario, y se reclama registrándose
-        // con ese correo. Restablecer aquí le pondría credenciales por otra puerta.
         .filter(user -> user.isActive() && user.getPasswordHash() != null)
         .flatMap(user -> issue(user.getId(), AccountToken.PASSWORD_RESET, null,
             mailProperties.passwordResetTtl())
             .flatMap(token -> dispatch(mailService.sendPasswordReset(
                     user.getEmail(), user.getDisplayName(), token))
-                // El envío completa vacío, así que sin volver a emitir al usuario la cadena
-                // entera se quedaría sin valor y el aviso de abajo saldría también cuando la
-                // cuenta existe, que es justo al revés de lo que dice.
                 .thenReturn(user)))
         .doOnNext(user -> log.info("Password reset link sent for user {}", user.getId()))
         .switchIfEmpty(Mono.fromRunnable(
@@ -135,22 +127,16 @@ public class AccountServiceImpl implements AccountService {
   @Override
   public Mono<Void> resetPassword(ResetPasswordRequest request) {
     return consume(request.getToken(), AccountToken.PASSWORD_RESET)
-        .flatMap(consumed -> userRepository.findById(consumed.getUserId()))
-        .flatMap(user -> encodePassword(request.getPassword())
-            .flatMap(passwordHash -> {
-              user.setPasswordHash(passwordHash);
-              // Quien recibe el enlace demuestra con ello que tiene el buzón, que es
-              // exactamente lo que verifica el correo. No verificarlo aquí obligaría a pedir
-              // otro correo para comprobar algo que ya se acaba de comprobar.
-              user.setEmailVerified(true);
-              return userRepository.save(user);
-            }))
-        // Se restablece la contraseña cuando se sospecha que otro la tiene. Dejar vivos los
-        // tokens de refresco ya emitidos dejaría dentro a ese otro durante un mes.
-        .flatMap(user -> refreshTokenRepository.revokeAllByUserId(user.getId())
-            .thenReturn(user))
-        // El bloqueo por intentos fallidos se olvida: quien acaba de demostrar que es el
-        // dueño no debería quedarse fuera por los fallos que provocaron el restablecimiento.
+        .flatMap(consumed -> encodePassword(request.getPassword())
+            .flatMap(passwordHash -> transactionalOperator.transactional(
+                userRepository.findById(consumed.getUserId())
+                    .flatMap(user -> {
+                      user.setPasswordHash(passwordHash);
+                      user.setEmailVerified(true);
+                      return userRepository.save(user);
+                    })
+                    .flatMap(user -> refreshTokenRepository.revokeAllByUserId(user.getId())
+                        .thenReturn(user)))))
         .doOnNext(user -> {
           loginAttemptService.recordSuccess(user.getEmail());
           log.info("Password reset completed for user {}", user.getId());
@@ -192,8 +178,6 @@ public class AccountServiceImpl implements AccountService {
         .switchIfEmpty(Mono.defer(() -> {
           String previous = user.getEmail();
           user.setEmail(newEmail);
-          // Acaba de demostrarse que la cuenta recibe correo en la dirección nueva, que es
-          // justo lo que comprueba la verificación.
           user.setEmailVerified(true);
           return userRepository.save(user)
               .flatMap(saved -> moveLocalIdentity(previous, newEmail).thenReturn(saved))
@@ -265,8 +249,6 @@ public class AccountServiceImpl implements AccountService {
             && found.getExpiresAt().isAfter(now))
         .switchIfEmpty(Mono.error(
             new InvalidAccountTokenException(Constants.INVALID_ACCOUNT_TOKEN)))
-        // Se marca antes de hacer nada: si algo falla a mitad, el enlace queda quemado en
-        // lugar de seguir sirviendo. Es lo prudente cuando abre la puerta de una cuenta.
         .flatMap(found -> {
           found.setConsumedAt(now);
           return accountTokenRepository.save(found);

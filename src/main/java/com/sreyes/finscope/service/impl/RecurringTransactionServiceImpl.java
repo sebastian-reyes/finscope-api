@@ -46,30 +46,35 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
  * Implementación del servicio {@link RecurringTransactionService}.
- *
+ * <p>
  * La plantilla es el plan y las transacciones son lo que pasó. Aquí solo se escribe un
  * movimiento en un sitio, al confirmar un mes, y siempre porque el usuario lo pidió: nada
  * se genera en segundo plano.
- *
+ * </p>
+ * <p>
  * El estado de cada mes no se guarda. La consulta trae los hechos —si vence, si está
  * omitido, con qué movimiento se confirmó— y este servicio los combina con la fecha de hoy,
  * que es lo único que separa un pendiente de un vencido. Guardar el estado obligaría a
  * repasar todas las plantillas cada vez que se registra o se borra un movimiento, y
  * bastaría con que fallara una de esas veces para que la lista mintiera en silencio.
- *
+ *</p>
+ * <p>
  * El mes se traduce a un rango de fechas con {@link DateRanges}, el mismo que usan el
  * listado, los resúmenes y los presupuestos. Es lo que garantiza que el alquiler de
  * septiembre signifique lo mismo en la lista de fijos que en el gráfico del mes.
- *
+ *</p>
+ * <p>
  * Los tags viven en la plantilla y se copian al movimiento al confirmar, igual que el
  * importe y la descripción. La copia va de identificador a identificador contra el mismo
  * catálogo del usuario, sin pasar por los nombres: así el movimiento queda clasificado
  * exactamente con los tags del fijo, y renombrar uno después arrastra a los dos por igual.
+ * </p>
  */
 @Service
 @RequiredArgsConstructor
@@ -110,7 +115,9 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
    * teniendo ya un `Casa`, lo que se guardó es el que ya existía y es esa grafía la que
    * tiene que ver de vuelta.</p>
    */
+  // La plantilla y sus tags se guardan juntos, como en los movimientos.
   @Override
+  @Transactional
   public Mono<RecurringTemplate> createRecurring(Long userId,
                                                  SaveRecurringTransactionRequest request) {
     List<String> tags = TagRules.normalize(request.getTags());
@@ -127,7 +134,9 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
    * —que manda únicamente `active`— no le borre los que tiene, y que una lista vacía siga
    * significando dejarlo sin ninguno.</p>
    */
+  // Igual que al editar un movimiento: cambios, borrado de tags y alta de los nuevos, o nada.
   @Override
+  @Transactional
   public Mono<RecurringTemplate> updateRecurring(Long userId, Long id,
                                                  UpdateRecurringTransactionRequest request) {
     List<String> tags = TagRules.normalize(request.getTags());
@@ -167,6 +176,7 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
    * tag.</p>
    */
   @Override
+  @Transactional
   public Mono<RecurringOccurrence> confirmRecurring(Long userId, Long id,
                                                     ConfirmRecurringTransactionRequest request) {
     Integer month = request.getMonth();
@@ -365,9 +375,6 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
     transaction.setAmount(request.getAmount() == null
         ? detail.recurringAmount()
         : request.getAmount());
-    // La moneda sale de la plantilla y el tipo de cambio de la peticion: el de este mes no
-    // existia el dia en que el fijo se dio de alta, asi que es ahora cuando se sabe. Se
-    // validan como pareja, igual que en cualquier otro movimiento.
     Currency currency = Currency.fromValue(detail.recurringCurrency());
     CurrencyRules.validate(currency, request.getExchangeRate());
     transaction.setCurrency(currency.getValue());
@@ -428,13 +435,6 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
   }
 
   /**
-   * Aplica sobre la plantilla existente únicamente los valores informados en la petición.
-   *
-   * @param recurring plantilla a modificar
-   * @param request   datos a actualizar
-   * @return la plantilla con los cambios aplicados
-   */
-  /**
    * Traduce a código la moneda recibida, conservando el nulo de «no la toques».
    *
    * @param currency moneda recibida en la petición, puede ser nula
@@ -450,9 +450,6 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
     Patches.setIfPresent(request.getTransactionTypeId(), recurring::setTransactionTypeId);
     Patches.setIfPresent(request.getDescription(), recurring::setDescription);
     Patches.setIfPresent(request.getAmount(), recurring::setAmount);
-    // La moneda de la plantilla rige de aqui en adelante. Los meses ya confirmados no se
-    // tocan: cada uno guarda en su transaccion la moneda y el cambio con los que se
-    // registro, que es lo que de verdad paso aquel dia.
     Patches.setIfPresent(currencyCode(request.getCurrency()), recurring::setCurrency);
     Patches.setIfPresent(request.getDayOfMonth(), recurring::setDayOfMonth);
     Patches.setIfPresent(request.getEveryMonths(), recurring::setEveryMonths);
