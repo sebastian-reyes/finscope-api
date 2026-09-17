@@ -122,7 +122,7 @@
       "id": "openapi",
       "type": "external",
       "label": "finscope-api.yaml",
-      "sublabel": "contrato 6.7.0",
+      "sublabel": "contrato 6.8.0",
       "tag": "fuente de la verdad",
       "pos": [
         835,
@@ -212,7 +212,7 @@
       "id": "flyway",
       "type": "database",
       "label": "Flyway",
-      "sublabel": "V1…V7 con su reverso",
+      "sublabel": "V1…V10 con su reverso",
       "tag": "el único JDBC",
       "pos": [
         40,

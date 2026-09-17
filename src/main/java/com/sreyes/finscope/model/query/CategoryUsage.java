@@ -6,7 +6,8 @@ package com.sreyes.finscope.model.query;
  * consultarse categoría a categoría, y es lo que permite avisar de cuántos movimientos se
  * reasignarán antes de borrar una.
  *
- * Los nombres de las propiedades evitan a propósito llamarse `id`, `name` o `appliesTo`,
+ * Los nombres de las propiedades evitan a propósito llamarse `id`, `name`, `appliesTo`,
+ * `color` o `icon`,
  * por el mismo motivo que {@link TagUsage}: coincidirían con las propiedades homónimas de
  * {@link com.sreyes.finscope.model.entity.Category} y el conversor iría a buscar las
  * columnas de la entidad en lugar de los alias de la consulta, dejando toda la proyección
@@ -16,6 +17,8 @@ package com.sreyes.finscope.model.query;
  * @param categoryName     nombre de la categoría, con la grafía que escribió el usuario
  * @param categoryScope    tipo de movimiento al que se ofrece: EXPENSE, INCOME o BOTH
  * @param systemCategory   si es la categoría de reserva, que no puede eliminarse
+ * @param categoryColor    color elegido para su ficha, nulo si se deduce del nombre
+ * @param categoryIcon     icono elegido para su ficha, nulo si se deduce del nombre
  * @param transactionCount cuántas transacciones clasifica, cero si ninguna
  */
 public record CategoryUsage(
@@ -23,5 +26,7 @@ public record CategoryUsage(
     String categoryName,
     String categoryScope,
     Boolean systemCategory,
+    String categoryColor,
+    String categoryIcon,
     Long transactionCount) {
 }

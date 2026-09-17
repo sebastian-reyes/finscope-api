@@ -32,11 +32,14 @@ public interface CategoryRepository extends R2dbcRepository<Category, Long> {
              c.name_category AS category_name,
              c.applies_to AS category_scope,
              c.is_system AS system_category,
+             c.color AS category_color,
+             c.icon AS category_icon,
              COUNT(t.id_transaction) AS transaction_count
       FROM categories c
       LEFT JOIN transactions t ON t.category_id = c.id_category
       WHERE c.user_id = :userId
-      GROUP BY c.id_category, c.name_category, c.applies_to, c.is_system
+      GROUP BY c.id_category, c.name_category, c.applies_to, c.is_system, c.color,
+               c.icon
       ORDER BY LOWER(c.name_category)
       """)
   Flux<CategoryUsage> findUsageByUserId(Long userId);
@@ -55,11 +58,14 @@ public interface CategoryRepository extends R2dbcRepository<Category, Long> {
              c.name_category AS category_name,
              c.applies_to AS category_scope,
              c.is_system AS system_category,
+             c.color AS category_color,
+             c.icon AS category_icon,
              COUNT(t.id_transaction) AS transaction_count
       FROM categories c
       LEFT JOIN transactions t ON t.category_id = c.id_category
       WHERE c.user_id = :userId AND c.id_category = :id
-      GROUP BY c.id_category, c.name_category, c.applies_to, c.is_system
+      GROUP BY c.id_category, c.name_category, c.applies_to, c.is_system, c.color,
+               c.icon
       """)
   Mono<CategoryUsage> findUsageByUserIdAndId(Long userId, Long id);
 

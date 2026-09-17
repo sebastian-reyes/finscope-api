@@ -46,7 +46,7 @@ info:
     Todos los recursos financieros pertenecen al usuario autenticado y estan aislados
     entre usuarios. Salvo los endpoints de autenticacion, todas las operaciones exigen
     un token de acceso.
-  version: 6.7.0
+  version: 6.8.0
 servers:
   - url: /
     description: Servidor local
@@ -495,7 +495,8 @@ paths:
       tags: [categories]
       summary: Actualiza una categoria
       description: |
-        Cambia el nombre o el tipo de movimiento al que se ofrece la categoria. El cambio
+        Cambia el nombre, el color, el icono o el tipo de movimiento al que se ofrece la
+        categoria. El cambio
         alcanza a todas las transacciones que clasifica, porque la categoria es una sola y
         se comparte entre ellas.
         Los campos ausentes se dejan como estan. Renombrar a un nombre ya ocupado se
@@ -614,10 +615,11 @@ paths:
       - $ref: "#/components/parameters/PathId"
     patch:
       tags: [tags]
-      summary: Renombra un tag
+      summary: Renombra un tag o cambia su color o su icono
       description: |
-        Cambia el nombre del tag en todas las transacciones que lo llevan, porque el tag es
-        uno solo y se comparte entre ellas.
+        Cambia el nombre, el color o el icono del tag en todas las transacciones que lo llevan,
+        porque el tag es uno solo y se comparte entre ellas. El color o el icono ausentes se
+        dejan como estan.
         El nombre debe seguir libre dentro del catalogo del usuario sin distinguir
         mayusculas: renombrar a un nombre ya existente se rechaza en lugar de fusionar los
         dos tags, para que la operacion nunca destruya informacion sin avisar.
@@ -1726,6 +1728,10 @@ components:
           type: integer
           format: int64
           description: Cuantas transacciones del usuario clasifica esta categoria
+        color:
+          $ref: "#/components/schemas/ChipColor"
+        icon:
+          $ref: "#/components/schemas/ChipIcon"
 
     SaveCategoryRequest:
       type: object
@@ -1738,6 +1744,52 @@ components:
           maxLength: 70
         appliesTo:
           $ref: "#/components/schemas/CategoryScope"
+        color:
+          $ref: "#/components/schemas/ChipColorChange"
+        icon:
+          $ref: "#/components/schemas/ChipIconChange"
+
+    ChipColor:
+      type: string
+      pattern: "^(preset-[0-7]|#[0-9a-f]{6})$"
+      description: |
+        Color elegido para la ficha de una categoria o un tag. Ausente o nulo si nunca se
+        eligio: entonces el cliente lo deduce del nombre, como antes de poder elegirse.
+
+        `preset-0` a `preset-7` no es un color sino una de las ocho fichas de la paleta, que
+        el cliente resuelve contra el color principal y el tema del usuario. `#rrggbb` es un
+        color libre, siempre en minusculas, y se pinta tal cual.
+      example: preset-3
+
+    ChipColorChange:
+      type: string
+      pattern: "^(auto|preset-[0-7]|#[0-9a-fA-F]{6})$"
+      description: |
+        Color a fijar en la ficha. Si no viene, se deja el que tuviera. `auto` lo quita y
+        devuelve la ficha al color deducido del nombre; hace falta un valor propio porque
+        un nulo en el cuerpo significa lo mismo que no mandar nada. El hexadecimal se
+        guarda en minusculas.
+      example: "#e8a33d"
+
+    ChipIcon:
+      type: string
+      maxLength: 40
+      pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
+      description: |
+        Icono elegido para la ficha de una categoria o un tag, por su nombre y sin prefijo.
+        Ausente o nulo si nunca se eligio: entonces el cliente lo deduce del nombre. La API no
+        conoce el catalogo de iconos; un nombre que el cliente no sepa pintar se trata como
+        si no hubiera ninguno.
+      example: airplane
+
+    ChipIconChange:
+      type: string
+      maxLength: 40
+      pattern: "^(auto|[a-zA-Z0-9]+(-[a-zA-Z0-9]+)*)$"
+      description: |
+        Icono a fijar en la ficha. Si no viene, se deja el que tuviera. `auto` lo quita y
+        devuelve la ficha al icono deducido del nombre. Se guarda en minusculas.
+      example: piggy-bank
 
     Currency:
       type: string
@@ -1953,10 +2005,14 @@ components:
           type: integer
           format: int64
           description: Cuantas transacciones del usuario llevan este tag
+        color:
+          $ref: "#/components/schemas/ChipColor"
+        icon:
+          $ref: "#/components/schemas/ChipIcon"
 
     SaveTagRequest:
       type: object
-      description: Nombre de un tag al crearlo o al renombrarlo
+      description: Nombre, color e icono de un tag al crearlo o al modificarlo
       required: [name]
       properties:
         name:
@@ -1966,6 +2022,10 @@ components:
           description: |
             Se recortan los espacios sobrantes. No puede coincidir con otro tag del mismo
             usuario sin distinguir mayusculas.
+        color:
+          $ref: "#/components/schemas/ChipColorChange"
+        icon:
+          $ref: "#/components/schemas/ChipIconChange"
 
     TransactionSummaryResponse:
       type: object

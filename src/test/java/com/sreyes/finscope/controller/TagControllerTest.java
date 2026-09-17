@@ -55,8 +55,8 @@ class TagControllerTest {
   @DisplayName("Devuelve el catálogo del usuario con el uso de cada tag")
   void listsTagsWithUsage() {
     when(tagService.findTags(USER_ID)).thenReturn(Flux.just(
-        new TagUsage(1L, "ocio", 4L),
-        new TagUsage(2L, "personal", 0L)));
+        new TagUsage(1L, "ocio", null, null, 4L),
+        new TagUsage(2L, "personal", null, null, 0L)));
 
     webTestClient.get().uri("/tags")
         .exchange()
@@ -86,8 +86,8 @@ class TagControllerTest {
   @Test
   @DisplayName("Crea un tag y responde 201 con el tag sin uso")
   void createsTag() {
-    when(tagService.createTag(USER_ID, "ocio"))
-        .thenReturn(Mono.just(new TagUsage(TAG_ID, "ocio", 0L)));
+    when(tagService.createTag(USER_ID, "ocio", null, null))
+        .thenReturn(Mono.just(new TagUsage(TAG_ID, "ocio", null, null, 0L)));
 
     webTestClient.post().uri("/tags")
         .bodyValue(Map.of("name", "ocio"))
@@ -102,7 +102,7 @@ class TagControllerTest {
   @Test
   @DisplayName("Traduce a 409 el alta de un nombre que el usuario ya tiene")
   void reportsConflictOnDuplicateName() {
-    when(tagService.createTag(USER_ID, "ocio"))
+    when(tagService.createTag(USER_ID, "ocio", null, null))
         .thenReturn(Mono.error(new TagNameAlreadyUsedException("A tag named ocio already exists")));
 
     webTestClient.post().uri("/tags")
@@ -125,8 +125,8 @@ class TagControllerTest {
   @Test
   @DisplayName("Renombra un tag y devuelve su uso actual")
   void renamesTag() {
-    when(tagService.renameTag(USER_ID, TAG_ID, "tiempo libre"))
-        .thenReturn(Mono.just(new TagUsage(TAG_ID, "tiempo libre", 4L)));
+    when(tagService.updateTag(USER_ID, TAG_ID, "tiempo libre", null, null))
+        .thenReturn(Mono.just(new TagUsage(TAG_ID, "tiempo libre", null, null, 4L)));
 
     webTestClient.patch().uri("/tags/{id}", TAG_ID)
         .bodyValue(Map.of("name", "tiempo libre"))
@@ -140,7 +140,7 @@ class TagControllerTest {
   @Test
   @DisplayName("Traduce a 404 el tag que no está en el catálogo del usuario")
   void reportsNotFoundOnUnknownTag() {
-    when(tagService.renameTag(USER_ID, TAG_ID, "ocio"))
+    when(tagService.updateTag(USER_ID, TAG_ID, "ocio", null, null))
         .thenReturn(Mono.error(new TagNotFoundException("Tag not found with id: " + TAG_ID)));
 
     webTestClient.patch().uri("/tags/{id}", TAG_ID)
@@ -162,5 +162,61 @@ class TagControllerTest {
         .expectBody().isEmpty();
 
     verify(tagService).deleteTag(USER_ID, TAG_ID);
+  }
+
+  @Test
+  @DisplayName("Pasa el color al servicio y lo devuelve en la respuesta")
+  void updatesColor() {
+    when(tagService.updateTag(USER_ID, TAG_ID, "ocio", "preset-2", null))
+        .thenReturn(Mono.just(new TagUsage(TAG_ID, "ocio", "preset-2", null, 4L)));
+
+    webTestClient.patch().uri("/tags/{id}", TAG_ID)
+        .bodyValue(Map.of("name", "ocio", "color", "preset-2"))
+        .exchange()
+        .expectStatus().isOk()
+        .expectBody()
+        .jsonPath("$.color").isEqualTo("preset-2");
+  }
+
+  @Test
+  @DisplayName("Rechaza con 400 un color que ningún cliente sabe pintar")
+  void rejectsUnknownColor() {
+    webTestClient.patch().uri("/tags/{id}", TAG_ID)
+        .bodyValue(Map.of("name", "ocio", "color", "red"))
+        .exchange()
+        .expectStatus().isBadRequest();
+
+    webTestClient.patch().uri("/tags/{id}", TAG_ID)
+        .bodyValue(Map.of("name", "ocio", "color", "preset-8"))
+        .exchange()
+        .expectStatus().isBadRequest();
+  }
+
+  @Test
+  @DisplayName("Pasa el icono al servicio y lo devuelve en la respuesta")
+  void updatesIcon() {
+    when(tagService.updateTag(USER_ID, TAG_ID, "ocio", null, "piggy-bank"))
+        .thenReturn(Mono.just(new TagUsage(TAG_ID, "ocio", null, "piggy-bank", 4L)));
+
+    webTestClient.patch().uri("/tags/{id}", TAG_ID)
+        .bodyValue(Map.of("name", "ocio", "icon", "piggy-bank"))
+        .exchange()
+        .expectStatus().isOk()
+        .expectBody()
+        .jsonPath("$.icon").isEqualTo("piggy-bank");
+  }
+
+  @Test
+  @DisplayName("Rechaza con 400 un icono que no tiene forma de nombre")
+  void rejectsMalformedIcon() {
+    webTestClient.patch().uri("/tags/{id}", TAG_ID)
+        .bodyValue(Map.of("name", "ocio", "icon", "bi bi-basket"))
+        .exchange()
+        .expectStatus().isBadRequest();
+
+    webTestClient.patch().uri("/tags/{id}", TAG_ID)
+        .bodyValue(Map.of("name", "ocio", "icon", "-basket"))
+        .exchange()
+        .expectStatus().isBadRequest();
   }
 }

@@ -43,7 +43,8 @@ public class TagController implements TagsApi {
                                                      ServerWebExchange exchange) {
     return authenticatedUser.currentUserId()
         .zipWith(saveTagRequest)
-        .flatMap(tuple -> tagService.createTag(tuple.getT1(), tuple.getT2().getName()))
+        .flatMap(tuple -> tagService.createTag(tuple.getT1(), tuple.getT2().getName(),
+            tuple.getT2().getColor(), tuple.getT2().getIcon()))
         .map(tagMapper::toResponse)
         .map(tag -> ResponseEntity.status(HttpStatus.CREATED).body(tag));
   }
@@ -54,7 +55,8 @@ public class TagController implements TagsApi {
                                                      ServerWebExchange exchange) {
     return authenticatedUser.currentUserId()
         .zipWith(saveTagRequest)
-        .flatMap(tuple -> tagService.renameTag(tuple.getT1(), id, tuple.getT2().getName()))
+        .flatMap(tuple -> tagService.updateTag(tuple.getT1(), id, tuple.getT2().getName(),
+            tuple.getT2().getColor(), tuple.getT2().getIcon()))
         .map(tagMapper::toResponse)
         .map(ResponseEntity::ok);
   }

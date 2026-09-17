@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -55,12 +56,12 @@ class CategoryServiceImplTest {
 
   /** Categoría de reserva del usuario, la que recibe lo que se elimina. */
   private Category fallback() {
-    return new Category(1L, USER_ID, "Otros", "BOTH", true);
+    return new Category(1L, USER_ID, "Otros", "BOTH", true, null, null);
   }
 
   /** Categoría corriente, editable y eliminable. */
   private Category comida() {
-    return new Category(4L, USER_ID, "Comida", "EXPENSE", false);
+    return new Category(4L, USER_ID, "Comida", "EXPENSE", false, null, null);
   }
 
   @Test
@@ -71,10 +72,10 @@ class CategoryServiceImplTest {
         eq(false))).thenReturn(Mono.just(1L));
     when(categoryRepository.findByUserIdAndName(USER_ID, "Mascotas"))
         .thenReturn(Mono.empty(), Mono.just(new Category(9L, USER_ID, "Mascotas", "EXPENSE",
-            false)));
+            false, null, null)));
 
     StepVerifier.create(categoryService.createCategory(USER_ID, " Mascotas ",
-        CategoryScope.EXPENSE))
+        CategoryScope.EXPENSE, null, null))
         .assertNext(created -> {
           assertEquals("Mascotas", created.categoryName());
           assertEquals(0L, created.transactionCount());
@@ -88,7 +89,8 @@ class CategoryServiceImplTest {
     when(categoryRepository.findByUserIdAndName(USER_ID, "Comida"))
         .thenReturn(Mono.just(comida()));
 
-    StepVerifier.create(categoryService.createCategory(USER_ID, "Comida", CategoryScope.EXPENSE))
+    StepVerifier.create(categoryService.createCategory(USER_ID, "Comida", CategoryScope.EXPENSE,
+        null, null))
         .expectError(CategoryNameAlreadyUsedException.class)
         .verify();
 
@@ -104,9 +106,11 @@ class CategoryServiceImplTest {
     when(categoryRepository.save(any(Category.class)))
         .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
     when(categoryRepository.findUsageByUserIdAndId(USER_ID, 4L))
-        .thenReturn(Mono.just(new CategoryUsage(4L, "Alimentación", "EXPENSE", false, 12L)));
+        .thenReturn(Mono.just(
+            new CategoryUsage(4L, "Alimentación", "EXPENSE", false, null, null, 12L)));
 
-    StepVerifier.create(categoryService.updateCategory(USER_ID, 4L, "Alimentación", null))
+    StepVerifier.create(
+        categoryService.updateCategory(USER_ID, 4L, "Alimentación", null, null, null))
         .assertNext(updated -> {
           assertEquals("Alimentación", updated.categoryName());
           assertEquals("EXPENSE", updated.categoryScope());
@@ -119,7 +123,7 @@ class CategoryServiceImplTest {
   void failsUpdatingAnotherUsersCategory() {
     when(categoryRepository.findByIdAndUserId(4L, 8L)).thenReturn(Mono.empty());
 
-    StepVerifier.create(categoryService.updateCategory(8L, 4L, "Comida", null))
+    StepVerifier.create(categoryService.updateCategory(8L, 4L, "Comida", null, null, null))
         .expectError(CategoryNotFoundException.class)
         .verify();
   }
@@ -209,5 +213,62 @@ class CategoryServiceImplTest {
     verify(categoryRepository).insertIfAbsent(USER_ID, "Salario", "INCOME", false);
     verify(categoryRepository, times(13))
         .insertIfAbsent(eq(USER_ID), anyString(), anyString(), eq(false));
+  }
+
+  @Test
+  @DisplayName("Fija el color de una categoría sin tocar su ámbito")
+  void updatesColor() {
+    when(categoryRepository.findByIdAndUserId(4L, USER_ID)).thenReturn(Mono.just(comida()));
+    when(categoryRepository.findByUserIdAndName(USER_ID, "Comida")).thenReturn(Mono.just(comida()));
+    when(categoryRepository.save(any(Category.class)))
+        .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+    when(categoryRepository.findUsageByUserIdAndId(USER_ID, 4L))
+        .thenReturn(Mono.just(
+            new CategoryUsage(4L, "Comida", "EXPENSE", false, "preset-5", null, 1L)));
+
+    StepVerifier.create(
+        categoryService.updateCategory(USER_ID, 4L, "Comida", null, "preset-5", null))
+        .expectNextCount(1)
+        .verifyComplete();
+
+    verify(categoryRepository).save(argThat(saved ->
+        "preset-5".equals(saved.getColor()) && "EXPENSE".equals(saved.getAppliesTo())));
+  }
+
+  @Test
+  @DisplayName("Crea una categoría con un color libre")
+  void createsCategoryWithColor() {
+    when(categoryRepository.insertIfAbsent(eq(USER_ID), eq("Mascotas"), eq("EXPENSE"),
+        eq(false))).thenReturn(Mono.just(1L));
+    when(categoryRepository.findByUserIdAndName(USER_ID, "Mascotas"))
+        .thenReturn(Mono.empty(), Mono.just(new Category(9L, USER_ID, "Mascotas", "EXPENSE",
+            false, null, null)));
+    when(categoryRepository.save(any(Category.class)))
+        .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+
+    StepVerifier.create(categoryService.createCategory(USER_ID, "Mascotas", null, "#00AA88", null))
+        .assertNext(created -> assertEquals("#00aa88", created.categoryColor()))
+        .verifyComplete();
+  }
+
+  @Test
+  @DisplayName("Fija el icono de una categoría sin tocar su color")
+  void updatesIcon() {
+    Category existing = new Category(4L, USER_ID, "Comida", "EXPENSE", false, "#112233", null);
+    when(categoryRepository.findByIdAndUserId(4L, USER_ID)).thenReturn(Mono.just(existing));
+    when(categoryRepository.findByUserIdAndName(USER_ID, "Comida")).thenReturn(Mono.empty());
+    when(categoryRepository.save(any(Category.class)))
+        .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+    when(categoryRepository.findUsageByUserIdAndId(USER_ID, 4L))
+        .thenReturn(Mono.just(
+            new CategoryUsage(4L, "Comida", "EXPENSE", false, "#112233", "egg-fried", 1L)));
+
+    StepVerifier.create(categoryService.updateCategory(USER_ID, 4L, "Comida", null, null,
+        "egg-fried"))
+        .expectNextCount(1)
+        .verifyComplete();
+
+    verify(categoryRepository).save(argThat(saved ->
+        "egg-fried".equals(saved.getIcon()) && "#112233".equals(saved.getColor())));
   }
 }

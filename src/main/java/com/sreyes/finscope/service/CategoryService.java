@@ -26,21 +26,31 @@ public interface CategoryService {
    * @param userId    identificador del usuario propietario
    * @param name      nombre de la categoría
    * @param appliesTo tipo de movimiento al que se ofrece, egresos si no se indica
+   * @param color     color de su ficha tal y como llega en la petición, nulo para el
+   *                  automático
+   * @param icon      icono de su ficha tal y como llega en la petición, nulo para el
+   *                  automático
    * @return la categoría creada, todavía sin transacciones
    */
-  Mono<CategoryUsage> createCategory(Long userId, String name, CategoryScope appliesTo);
+  Mono<CategoryUsage> createCategory(Long userId, String name, CategoryScope appliesTo,
+                                     String color, String icon);
 
   /**
-   * Actualiza el nombre o el ámbito de una categoría del usuario.
+   * Actualiza el nombre, el ámbito, el color o el icono de una categoría del usuario.
    * Los valores no informados se dejan como están.
    *
    * @param userId    identificador del usuario propietario
    * @param id        identificador de la categoría
    * @param name      nombre nuevo
    * @param appliesTo ámbito nuevo, o nulo para conservar el actual
+   * @param color     color nuevo tal y como llega en la petición, o nulo para conservar el
+   *                  actual
+   * @param icon      icono nuevo tal y como llega en la petición, o nulo para conservar el
+   *                  actual
    * @return la categoría actualizada
    */
-  Mono<CategoryUsage> updateCategory(Long userId, Long id, String name, CategoryScope appliesTo);
+  Mono<CategoryUsage> updateCategory(Long userId, Long id, String name, CategoryScope appliesTo,
+                                     String color, String icon);
 
   /**
    * Elimina una categoría del catálogo reasignando sus transacciones a la categoría de

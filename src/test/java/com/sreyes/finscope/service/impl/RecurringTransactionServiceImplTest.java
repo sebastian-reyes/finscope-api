@@ -126,12 +126,12 @@ class RecurringTransactionServiceImplTest {
 
   /** Categoría de egresos, la que clasifica el internet. */
   private Category servicios() {
-    return new Category(CATEGORY_ID, USER_ID, "Servicios", "EXPENSE", false);
+    return new Category(CATEGORY_ID, USER_ID, "Servicios", "EXPENSE", false, null, null);
   }
 
   /** Categoría de solo ingresos: no admite un egreso. */
   private Category salario() {
-    return new Category(20L, USER_ID, "Salario", "INCOME", false);
+    return new Category(20L, USER_ID, "Salario", "INCOME", false, null, null);
   }
 
   private TransactionType expense() {
@@ -545,7 +545,7 @@ class RecurringTransactionServiceImplTest {
     });
     when(tagRepository.insertIfAbsent(eq(USER_ID), any())).thenReturn(Mono.just(1L));
     when(tagRepository.findByUserIdAndLowerNameIn(eq(USER_ID), any()))
-        .thenReturn(Flux.just(new Tag(30L, USER_ID, "Casa")));
+        .thenReturn(Flux.just(new Tag(30L, USER_ID, "Casa", null, null)));
     when(recurringTagRepository.saveAll(anyList()))
         .thenAnswer(call -> Flux.fromIterable(call.getArgument(0)));
     // El catálogo manda: se escribió `casa` y lo que se guardó fue el `Casa` que ya existía.

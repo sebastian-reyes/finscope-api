@@ -45,7 +45,7 @@ public class CategoryController implements CategoriesApi {
     return authenticatedUser.currentUserId()
         .zipWith(saveCategoryRequest)
         .flatMap(tuple -> categoryService.createCategory(tuple.getT1(), tuple.getT2().getName(),
-            tuple.getT2().getAppliesTo()))
+            tuple.getT2().getAppliesTo(), tuple.getT2().getColor(), tuple.getT2().getIcon()))
         .map(categoryMapper::toResponse)
         .map(category -> ResponseEntity.status(HttpStatus.CREATED).body(category));
   }
@@ -56,7 +56,8 @@ public class CategoryController implements CategoriesApi {
     return authenticatedUser.currentUserId()
         .zipWith(saveCategoryRequest)
         .flatMap(tuple -> categoryService.updateCategory(tuple.getT1(), id,
-            tuple.getT2().getName(), tuple.getT2().getAppliesTo()))
+            tuple.getT2().getName(), tuple.getT2().getAppliesTo(), tuple.getT2().getColor(),
+            tuple.getT2().getIcon()))
         .map(categoryMapper::toResponse)
         .map(ResponseEntity::ok);
   }

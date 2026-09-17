@@ -87,7 +87,8 @@ class TransactionQueryServiceImplTest {
     when(transactionTypeRepository.findAllById(any(Iterable.class)))
         .thenReturn(Flux.just(new TransactionType(3L, "Egreso", "EXPENSE")));
     when(categoryRepository.findAllById(any(Iterable.class)))
-        .thenReturn(Flux.just(new Category(5L, USER_ID, "Entretenimiento", "EXPENSE", false)));
+        .thenReturn(Flux.just(
+            new Category(5L, USER_ID, "Entretenimiento", "EXPENSE", false, null, null)));
     when(tagRepository.findNamesByTransactionIdIn(any())).thenReturn(Flux.empty());
     when(transactionMapper.toResponse(any(), any(), any(), any()))
         .thenReturn(new TransactionResponse());

@@ -2,6 +2,7 @@ package com.sreyes.finscope.service.impl;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -54,19 +55,19 @@ class TagServiceImplTest {
    * @return la entidad de tag
    */
   private Tag tag(String name) {
-    return new Tag(TAG_ID, USER_ID, name);
+    return new Tag(TAG_ID, USER_ID, name, null, null);
   }
 
   @Test
   @DisplayName("Devuelve el catálogo del usuario con el uso de cada tag")
   void returnsCatalogueWithUsage() {
     when(tagRepository.findUsageByUserId(USER_ID)).thenReturn(Flux.just(
-        new TagUsage(1L, "ocio", 4L),
-        new TagUsage(2L, "personal", 0L)));
+        new TagUsage(1L, "ocio", null, null, 4L),
+        new TagUsage(2L, "personal", null, null, 0L)));
 
     StepVerifier.create(tagService.findTags(USER_ID))
-        .expectNext(new TagUsage(1L, "ocio", 4L))
-        .expectNext(new TagUsage(2L, "personal", 0L))
+        .expectNext(new TagUsage(1L, "ocio", null, null, 4L))
+        .expectNext(new TagUsage(2L, "personal", null, null, 0L))
         .verifyComplete();
   }
 
@@ -74,10 +75,10 @@ class TagServiceImplTest {
   @DisplayName("No mezcla los tags de otro usuario")
   void doesNotLeakAnotherUsersTags() {
     when(tagRepository.findUsageByUserId(OTHER_USER_ID))
-        .thenReturn(Flux.just(new TagUsage(9L, "trabajo", 1L)));
+        .thenReturn(Flux.just(new TagUsage(9L, "trabajo", null, null, 1L)));
 
     StepVerifier.create(tagService.findTags(OTHER_USER_ID))
-        .expectNext(new TagUsage(9L, "trabajo", 1L))
+        .expectNext(new TagUsage(9L, "trabajo", null, null, 1L))
         .verifyComplete();
 
     verify(tagRepository).findUsageByUserId(OTHER_USER_ID);
@@ -90,8 +91,8 @@ class TagServiceImplTest {
         .thenReturn(Mono.empty(), Mono.just(tag("ocio")));
     when(tagRepository.insertIfAbsent(USER_ID, "ocio")).thenReturn(Mono.just(1L));
 
-    StepVerifier.create(tagService.createTag(USER_ID, "  ocio  "))
-        .expectNext(new TagUsage(TAG_ID, "ocio", 0L))
+    StepVerifier.create(tagService.createTag(USER_ID, "  ocio  ", null, null))
+        .expectNext(new TagUsage(TAG_ID, "ocio", null, null, 0L))
         .verifyComplete();
 
     verify(tagRepository).insertIfAbsent(USER_ID, "ocio");
@@ -102,7 +103,7 @@ class TagServiceImplTest {
   void rejectsDuplicateNameOnCreate() {
     when(tagRepository.findByUserIdAndName(USER_ID, "ocio")).thenReturn(Mono.just(tag("ocio")));
 
-    StepVerifier.create(tagService.createTag(USER_ID, "ocio"))
+    StepVerifier.create(tagService.createTag(USER_ID, "ocio", null, null))
         .expectError(TagNameAlreadyUsedException.class)
         .verify();
 
@@ -117,10 +118,10 @@ class TagServiceImplTest {
     when(tagRepository.findByUserIdAndName(USER_ID, "tiempo libre")).thenReturn(Mono.empty());
     when(tagRepository.save(any(Tag.class))).thenReturn(Mono.just(tag("tiempo libre")));
     when(tagRepository.findUsageByUserId(USER_ID))
-        .thenReturn(Flux.just(new TagUsage(TAG_ID, "tiempo libre", 4L)));
+        .thenReturn(Flux.just(new TagUsage(TAG_ID, "tiempo libre", null, null, 4L)));
 
-    StepVerifier.create(tagService.renameTag(USER_ID, TAG_ID, "tiempo libre"))
-        .expectNext(new TagUsage(TAG_ID, "tiempo libre", 4L))
+    StepVerifier.create(tagService.updateTag(USER_ID, TAG_ID, "tiempo libre", null, null))
+        .expectNext(new TagUsage(TAG_ID, "tiempo libre", null, null, 4L))
         .verifyComplete();
   }
 
@@ -132,10 +133,10 @@ class TagServiceImplTest {
     when(tagRepository.findByUserIdAndName(USER_ID, "ocio")).thenReturn(Mono.just(existing));
     when(tagRepository.save(any(Tag.class))).thenReturn(Mono.just(existing));
     when(tagRepository.findUsageByUserId(USER_ID))
-        .thenReturn(Flux.just(new TagUsage(TAG_ID, "ocio", 4L)));
+        .thenReturn(Flux.just(new TagUsage(TAG_ID, "ocio", null, null, 4L)));
 
-    StepVerifier.create(tagService.renameTag(USER_ID, TAG_ID, "ocio"))
-        .expectNext(new TagUsage(TAG_ID, "ocio", 4L))
+    StepVerifier.create(tagService.updateTag(USER_ID, TAG_ID, "ocio", null, null))
+        .expectNext(new TagUsage(TAG_ID, "ocio", null, null, 4L))
         .verifyComplete();
   }
 
@@ -144,9 +145,9 @@ class TagServiceImplTest {
   void rejectsDuplicateNameOnRename() {
     when(tagRepository.findByIdAndUserId(TAG_ID, USER_ID)).thenReturn(Mono.just(tag("ocio")));
     when(tagRepository.findByUserIdAndName(USER_ID, "personal"))
-        .thenReturn(Mono.just(new Tag(99L, USER_ID, "personal")));
+        .thenReturn(Mono.just(new Tag(99L, USER_ID, "personal", null, null)));
 
-    StepVerifier.create(tagService.renameTag(USER_ID, TAG_ID, "personal"))
+    StepVerifier.create(tagService.updateTag(USER_ID, TAG_ID, "personal", null, null))
         .expectError(TagNameAlreadyUsedException.class)
         .verify();
 
@@ -158,7 +159,7 @@ class TagServiceImplTest {
   void failsRenamingUnknownTag() {
     when(tagRepository.findByIdAndUserId(TAG_ID, USER_ID)).thenReturn(Mono.empty());
 
-    StepVerifier.create(tagService.renameTag(USER_ID, TAG_ID, "ocio"))
+    StepVerifier.create(tagService.updateTag(USER_ID, TAG_ID, "ocio", null, null))
         .expectError(TagNotFoundException.class)
         .verify();
   }
@@ -190,5 +191,94 @@ class TagServiceImplTest {
         .verify();
 
     verify(transactionTagRepository, never()).deleteByTagId(TAG_ID);
+  }
+
+  @Test
+  @DisplayName("Al crear con color lo guarda en minúsculas")
+  void createsTagWithColor() {
+    when(tagRepository.findByUserIdAndName(USER_ID, "ocio"))
+        .thenReturn(Mono.empty(), Mono.just(tag("ocio")));
+    when(tagRepository.insertIfAbsent(USER_ID, "ocio")).thenReturn(Mono.just(1L));
+    when(tagRepository.save(any(Tag.class)))
+        .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+
+    StepVerifier.create(tagService.createTag(USER_ID, "ocio", "#E8A33D", null))
+        .expectNext(new TagUsage(TAG_ID, "ocio", "#e8a33d", null, 0L))
+        .verifyComplete();
+  }
+
+  @Test
+  @DisplayName("Al crear sin color no escribe nada más que el alta")
+  void createsTagWithoutColorInASingleWrite() {
+    when(tagRepository.findByUserIdAndName(USER_ID, "ocio"))
+        .thenReturn(Mono.empty(), Mono.just(tag("ocio")));
+    when(tagRepository.insertIfAbsent(USER_ID, "ocio")).thenReturn(Mono.just(1L));
+
+    StepVerifier.create(tagService.createTag(USER_ID, "ocio", null, null))
+        .expectNext(new TagUsage(TAG_ID, "ocio", null, null, 0L))
+        .verifyComplete();
+
+    verify(tagRepository, never()).save(any(Tag.class));
+  }
+
+  @Test
+  @DisplayName("Cambiar solo el nombre conserva el color elegido")
+  void renamingKeepsColor() {
+    Tag existing = new Tag(TAG_ID, USER_ID, "ocio", "preset-3", null);
+    when(tagRepository.findByIdAndUserId(TAG_ID, USER_ID)).thenReturn(Mono.just(existing));
+    when(tagRepository.findByUserIdAndName(USER_ID, "viajes")).thenReturn(Mono.empty());
+    when(tagRepository.save(any(Tag.class)))
+        .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+    when(tagRepository.findUsageByUserId(USER_ID)).thenReturn(Flux.empty());
+
+    StepVerifier.create(tagService.updateTag(USER_ID, TAG_ID, "viajes", null, null))
+        .expectNext(new TagUsage(TAG_ID, "viajes", "preset-3", null, 0L))
+        .verifyComplete();
+  }
+
+  @Test
+  @DisplayName("El color auto devuelve el tag al color deducido del nombre")
+  void autoClearsColor() {
+    Tag existing = new Tag(TAG_ID, USER_ID, "ocio", "#112233", null);
+    when(tagRepository.findByIdAndUserId(TAG_ID, USER_ID)).thenReturn(Mono.just(existing));
+    when(tagRepository.findByUserIdAndName(USER_ID, "ocio")).thenReturn(Mono.just(existing));
+    when(tagRepository.save(any(Tag.class)))
+        .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+    when(tagRepository.findUsageByUserId(USER_ID)).thenReturn(Flux.empty());
+
+    StepVerifier.create(tagService.updateTag(USER_ID, TAG_ID, "ocio", "auto", null))
+        .expectNext(new TagUsage(TAG_ID, "ocio", null, null, 0L))
+        .verifyComplete();
+  }
+
+  @Test
+  @DisplayName("Al crear con icono lo guarda junto al color en una sola escritura extra")
+  void createsTagWithIcon() {
+    when(tagRepository.findByUserIdAndName(USER_ID, "viaje"))
+        .thenReturn(Mono.empty(), Mono.just(tag("viaje")));
+    when(tagRepository.insertIfAbsent(USER_ID, "viaje")).thenReturn(Mono.just(1L));
+    when(tagRepository.save(any(Tag.class)))
+        .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+
+    StepVerifier.create(tagService.createTag(USER_ID, "viaje", null, "Airplane"))
+        .expectNext(new TagUsage(TAG_ID, "viaje", null, "airplane", 0L))
+        .verifyComplete();
+
+    verify(tagRepository, times(1)).save(any(Tag.class));
+  }
+
+  @Test
+  @DisplayName("Cambiar el icono conserva el color, y auto lo quita")
+  void updatesIconIndependentlyOfColor() {
+    Tag existing = new Tag(TAG_ID, USER_ID, "ocio", "preset-1", "controller");
+    when(tagRepository.findByIdAndUserId(TAG_ID, USER_ID)).thenReturn(Mono.just(existing));
+    when(tagRepository.findByUserIdAndName(USER_ID, "ocio")).thenReturn(Mono.just(existing));
+    when(tagRepository.save(any(Tag.class)))
+        .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+    when(tagRepository.findUsageByUserId(USER_ID)).thenReturn(Flux.empty());
+
+    StepVerifier.create(tagService.updateTag(USER_ID, TAG_ID, "ocio", null, "auto"))
+        .expectNext(new TagUsage(TAG_ID, "ocio", "preset-1", null, 0L))
+        .verifyComplete();
   }
 }

@@ -31,6 +31,8 @@ public interface CategoryMapper {
   @Mapping(target = "name", source = "categoryName")
   @Mapping(target = "appliesTo", source = "categoryScope")
   @Mapping(target = "isSystem", source = "systemCategory")
+  @Mapping(target = "color", source = "categoryColor")
+  @Mapping(target = "icon", source = "categoryIcon")
   @Mapping(target = "transactionCount", source = "transactionCount")
   CategoryResponse toResponse(CategoryUsage categoryUsage);
 
@@ -47,6 +49,8 @@ public interface CategoryMapper {
   @Mapping(target = "name", source = "name")
   @Mapping(target = "appliesTo", source = "appliesTo")
   @Mapping(target = "isSystem", source = "system")
+  @Mapping(target = "color", source = "color")
+  @Mapping(target = "icon", source = "icon")
   @Mapping(target = "transactionCount", constant = "0L")
   CategoryResponse toResponse(Category category);
 

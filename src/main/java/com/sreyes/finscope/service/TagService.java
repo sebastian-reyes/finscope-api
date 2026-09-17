@@ -26,19 +26,25 @@ public interface TagService {
    *
    * @param userId identificador del usuario propietario
    * @param name   nombre del tag
+   * @param color  color de su ficha tal y como llega en la petición, nulo para el automático
+   * @param icon   icono de su ficha tal y como llega en la petición, nulo para el automático
    * @return el tag creado, con su uso todavía a cero
    */
-  Mono<TagUsage> createTag(Long userId, String name);
+  Mono<TagUsage> createTag(Long userId, String name, String color, String icon);
 
   /**
-   * Renombra un tag del usuario, lo que lo cambia en todas las transacciones que lo llevan.
+   * Renombra un tag del usuario o cambia su color o su icono, lo que alcanza a todas las
+   * transacciones que
+   * lo llevan.
    *
    * @param userId identificador del usuario propietario
    * @param id     identificador del tag
    * @param name   nombre nuevo
-   * @return el tag renombrado
+   * @param color  color nuevo tal y como llega en la petición, nulo para conservar el actual
+   * @param icon   icono nuevo tal y como llega en la petición, nulo para conservar el actual
+   * @return el tag modificado
    */
-  Mono<TagUsage> renameTag(Long userId, Long id, String name);
+  Mono<TagUsage> updateTag(Long userId, Long id, String name, String color, String icon);
 
   /**
    * Elimina un tag del catálogo y lo retira de las transacciones que lo llevan.
