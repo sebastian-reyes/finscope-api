@@ -1,0 +1,16 @@
+-- Reverso de V11__push_notifications.sql.
+--
+-- No lo aplica Flyway: se guarda como texto para poder deshacer el cambio a mano si hiciera
+-- falta, igual que el resto de reversos del proyecto.
+--
+-- Se pierden las suscripciones: los telefonos dejan de recibir avisos y cada usuario tendria
+-- que volver a activarlos desde su cuenta si la funcion se recupera. El registro de avisos
+-- enviados tambien se va, asi que al reponerla podria repetirse el aviso del dia.
+
+DROP TABLE IF EXISTS notification_log;
+
+DROP TABLE IF EXISTS notification_preferences;
+
+DROP INDEX IF EXISTS idx_push_subscriptions_user;
+
+DROP TABLE IF EXISTS push_subscriptions;

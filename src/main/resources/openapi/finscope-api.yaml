@@ -43,10 +43,15 @@ info:
     el que se apuntaron, que es memoria de aquel dia y no participa en ningun calculo. Por
     eso los totales no suman monedas distintas: las separan.
 
+    Los avisos al telefono usan Web Push. El navegador entrega una suscripcion al
+    activarlos y a partir de ahi es la API quien decide cuando avisar: cada hora mira que
+    movimientos fijos vencen hoy o manana y que presupuestos del mes llegaron a su limite, y
+    manda el aviso aunque la aplicacion este cerrada. Ningun aviso se repite.
+
     Todos los recursos financieros pertenecen al usuario autenticado y estan aislados
     entre usuarios. Salvo los endpoints de autenticacion, todas las operaciones exigen
     un token de acceso.
-  version: 6.8.0
+  version: 6.9.0
 servers:
   - url: /
     description: Servidor local
@@ -69,6 +74,8 @@ tags:
     description: Movimientos que se repiten y su confirmacion mes a mes
   - name: summary
     description: Agregados financieros calculados sobre las transacciones
+  - name: push
+    description: Avisos al telefono por Web Push, sus dispositivos y sus preferencias
 
 paths:
   /auth/register:
@@ -1333,6 +1340,165 @@ paths:
         "429":
           $ref: "#/components/responses/TooManyRequests"
 
+  /push/config:
+    get:
+      tags: [push]
+      summary: Indica si el servidor puede mandar avisos y con que clave
+      description: |
+        El navegador necesita la clave publica VAPID para suscribirse. Si el servidor no
+        tiene claves configuradas los avisos estan apagados y la respuesta lo dice, para que
+        el cliente no ofrezca algo que no va a funcionar.
+      operationId: getPushConfig
+      responses:
+        "200":
+          description: Disponibilidad de los avisos
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PushConfigResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /push/subscriptions:
+    post:
+      tags: [push]
+      summary: Registra el dispositivo del usuario para recibir avisos
+      description: |
+        Guarda la suscripcion que entrega el navegador al aceptar el permiso. Es idempotente:
+        repetirla con la misma direccion actualiza las claves. La direccion identifica al
+        navegador y no al usuario, asi que si otra cuenta la registra pasa a ser suya y la
+        anterior deja de recibir avisos en ese dispositivo.
+
+        Solo se aceptan direcciones de los servicios de push de los navegadores: la API hace
+        peticiones a ellas y no puede aceptar cualquiera.
+      operationId: savePushSubscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SavePushSubscriptionRequest"
+      responses:
+        "204":
+          description: Dispositivo registrado
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    delete:
+      tags: [push]
+      summary: Da de baja un dispositivo del usuario
+      description: |
+        Deja de mandar avisos a esa direccion. No falla si ya no existia o si era de otra
+        cuenta: el resultado que se pide, que ahi no lleguen avisos de este usuario, se
+        cumple igual.
+      operationId: deletePushSubscription
+      parameters:
+        - name: endpoint
+          in: query
+          required: true
+          description: Direccion de la suscripcion tal y como la entrego el navegador
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 1000
+      responses:
+        "204":
+          description: Dispositivo dado de baja
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /push/preferences:
+    get:
+      tags: [push]
+      summary: Devuelve que avisos quiere recibir el usuario
+      description: Sin preferencias guardadas, todos los avisos estan encendidos.
+      operationId: getNotificationPreferences
+      responses:
+        "200":
+          description: Preferencias de avisos
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationPreferencesResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    patch:
+      tags: [push]
+      summary: Cambia que avisos quiere recibir el usuario
+      description: |
+        Las preferencias son de la cuenta y valen para todos sus dispositivos. Los campos
+        ausentes se dejan como estan.
+      operationId: updateNotificationPreferences
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateNotificationPreferencesRequest"
+      responses:
+        "200":
+          description: Preferencias actualizadas
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationPreferencesResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /push/test:
+    post:
+      tags: [push]
+      summary: Manda un aviso de prueba a los dispositivos del usuario
+      description: |
+        Sirve para comprobar de punta a punta que los avisos llegan: el permiso, la
+        suscripcion y las claves del servidor. Devuelve a cuantos dispositivos se entrego;
+        cero significa que el usuario no tiene ninguno registrado o que ninguno sigue vivo.
+      operationId: sendTestNotification
+      responses:
+        "200":
+          description: Resultado del envio
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PushTestResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1529,6 +1695,14 @@ components:
           schema:
             type: integer
             format: int32
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    ServiceUnavailable:
+      description: |
+        El servidor no tiene configurado lo necesario para esta operacion. La peticion es
+        correcta y otro servidor configurado la atenderia.
       content:
         application/json:
           schema:
@@ -2626,6 +2800,78 @@ components:
           type: integer
           minimum: 1970
           maximum: 9999
+
+    PushConfigResponse:
+      type: object
+      description: Disponibilidad de los avisos al telefono
+      required: [enabled]
+      properties:
+        enabled:
+          type: boolean
+          description: Si el servidor tiene claves VAPID y puede mandar avisos
+        publicKey:
+          type: string
+          description: |
+            Clave publica VAPID en Base64 URL, la que el navegador necesita para suscribirse.
+            Solo viene cuando enabled es true.
+
+    SavePushSubscriptionRequest:
+      type: object
+      description: Suscripcion de Web Push tal y como la entrega el navegador
+      required: [endpoint, keys]
+      properties:
+        endpoint:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          description: Direccion del servicio de push del navegador
+        keys:
+          $ref: "#/components/schemas/PushSubscriptionKeys"
+
+    PushSubscriptionKeys:
+      type: object
+      description: Claves con las que se cifra cada aviso para ese navegador
+      required: [p256dh, auth]
+      properties:
+        p256dh:
+          type: string
+          pattern: "^[A-Za-z0-9_-]{87}=?$"
+          description: Clave publica P-256 del navegador, sin comprimir, en Base64 URL
+        auth:
+          type: string
+          pattern: "^[A-Za-z0-9_-]{22}(==)?$"
+          description: Secreto de autenticacion de 16 bytes, en Base64 URL
+
+    NotificationPreferencesResponse:
+      type: object
+      description: Que avisos quiere recibir el usuario en sus dispositivos
+      required: [recurringDue, budgetLimit]
+      properties:
+        recurringDue:
+          type: boolean
+          description: Avisar el dia antes y el mismo dia de cada movimiento fijo pendiente
+        budgetLimit:
+          type: boolean
+          description: Avisar cuando un presupuesto del mes llega al 90 % y cuando lo supera
+
+    UpdateNotificationPreferencesRequest:
+      type: object
+      description: Cambio de preferencias; los campos ausentes no se tocan
+      properties:
+        recurringDue:
+          type: boolean
+        budgetLimit:
+          type: boolean
+
+    PushTestResponse:
+      type: object
+      description: Resultado de un aviso de prueba
+      required: [delivered]
+      properties:
+        delivered:
+          type: integer
+          format: int32
+          description: Dispositivos a los que el servicio de push acepto el aviso
 
     ErrorResponse:
       type: object

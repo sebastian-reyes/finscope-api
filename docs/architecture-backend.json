@@ -107,7 +107,7 @@
       "id": "controllers",
       "type": "backend",
       "label": "Controladores",
-      "sublabel": "8 recursos REST",
+      "sublabel": "9 recursos REST",
       "tag": "implementan el contrato",
       "pos": [
         835,
@@ -122,7 +122,7 @@
       "id": "openapi",
       "type": "external",
       "label": "finscope-api.yaml",
-      "sublabel": "contrato 6.8.0",
+      "sublabel": "contrato 6.9.0",
       "tag": "fuente de la verdad",
       "pos": [
         835,
@@ -137,7 +137,7 @@
       "id": "errors",
       "type": "backend",
       "label": "ExceptionHandler",
-      "sublabel": "24 excepciones de negocio",
+      "sublabel": "26 excepciones de negocio",
       "tag": "ErrorResponse con código",
       "pos": [
         1100,
@@ -197,7 +197,7 @@
       "id": "db",
       "type": "database",
       "label": "PostgreSQL 16",
-      "sublabel": "13 tablas",
+      "sublabel": "16 tablas",
       "tag": "pool de 10",
       "pos": [
         305,
@@ -212,7 +212,7 @@
       "id": "flyway",
       "type": "database",
       "label": "Flyway",
-      "sublabel": "V1…V10 con su reverso",
+      "sublabel": "V1…V11 con su reverso",
       "tag": "el único JDBC",
       "pos": [
         40,
@@ -383,7 +383,7 @@
       "dot": "amber",
       "title": "Persistencia",
       "items": [
-        "Trece tablas, todas colgando del usuario",
+        "Dieciséis tablas, todas colgando del usuario",
         "Flyway al arrancar, con el reverso escrito al lado",
         "Lo que se puede calcular no se guarda"
       ]

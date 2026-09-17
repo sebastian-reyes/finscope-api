@@ -95,6 +95,22 @@ finscope:
     verification-ttl: ${MAIL_VERIFICATION_TTL:24h}
     password-reset-ttl: ${MAIL_PASSWORD_RESET_TTL:1h}
     email-change-ttl: ${MAIL_EMAIL_CHANGE_TTL:1h}
+  push:
+    # Claves VAPID: la identidad del servidor ante los servicios de push. Sin ellas la
+    # aplicacion arranca igual y los avisos quedan apagados, como el correo sin SMTP. Se
+    # generan una vez y NO se cambian: cada suscripcion queda atada a la clave publica con la
+    # que se creo, y cambiarla deja a todos los telefonos sin avisos hasta que los reactiven.
+    public-key: ${VAPID_PUBLIC_KEY:}
+    private-key: ${VAPID_PRIVATE_KEY:}
+    subject: ${VAPID_SUBJECT:mailto:no-reply@fin-scope.app}
+    # El dia y la hora de los avisos se deciden en la zona de los usuarios, no en la del
+    # contenedor, que corre en UTC: con la del servidor, a las 20:00 de Lima ya seria manana.
+    zone: ${PUSH_ZONE:America/Lima}
+    window-start-hour: ${PUSH_WINDOW_START_HOUR:8}
+    window-end-hour: ${PUSH_WINDOW_END_HOUR:21}
+    budget-near-ratio: ${PUSH_BUDGET_NEAR_RATIO:0.9}
+    ttl: ${PUSH_TTL:12h}
+    scheduler-enabled: ${PUSH_SCHEDULER_ENABLED:true}
 logging:
   level:
     # Estas categorias registran las sentencias y sus parametros enlazados, que en esta
