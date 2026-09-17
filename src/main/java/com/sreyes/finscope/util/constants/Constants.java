@@ -39,6 +39,10 @@ public final class Constants {
       "{} is skipped for that month. Undo the skip before confirming it";
   public static final String RECURRING_NOT_DUE =
       "{} is not due on that month, so there is nothing to confirm or to skip";
+  public static final String PUSH_NOT_CONFIGURED =
+      "Push notifications are not configured on this server";
+  public static final String PUSH_ENDPOINT_NOT_ALLOWED =
+      "The subscription endpoint does not belong to a known push service";
   public static final String RECURRING_DATE_OUT_OF_PERIOD =
       "The date of a confirmed recurring transaction must fall inside the month it confirms";
 

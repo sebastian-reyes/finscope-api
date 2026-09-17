@@ -44,7 +44,8 @@ import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
 @Configuration
 @EnableWebFluxSecurity
 @EnableConfigurationProperties({JwtProperties.class, CorsProperties.class,
-    RateLimitProperties.class, LoginAttemptProperties.class, MailProperties.class})
+    RateLimitProperties.class, LoginAttemptProperties.class, MailProperties.class,
+    PushProperties.class})
 public class SecurityConfig {
 
   /**

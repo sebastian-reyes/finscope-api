@@ -11,8 +11,8 @@ que se repiten.
 [![WebFlux](https://img.shields.io/badge/WebFlux-reactiva-6DB33F)](https://docs.spring.io/spring-framework/reference/web/webflux.html)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![R2DBC](https://img.shields.io/badge/R2DBC-sin%20bloqueo-4169E1)](https://r2dbc.io/)
-[![OpenAPI](https://img.shields.io/badge/OpenAPI-6.8.0-85EA2D?logo=openapiinitiative&logoColor=black)](src/main/resources/openapi/finscope-api.yaml)
-[![Tests](https://img.shields.io/badge/tests-279%20verdes-success)](#pruebas-y-ci)
+[![OpenAPI](https://img.shields.io/badge/OpenAPI-6.9.0-85EA2D?logo=openapiinitiative&logoColor=black)](src/main/resources/openapi/finscope-api.yaml)
+[![Tests](https://img.shields.io/badge/tests-312%20verdes-success)](#pruebas-y-ci)
 
 [Arquitectura](#arquitectura) · [La API](#la-api) · [Arrancar](#arrancar) ·
 [Variables](#variables-de-entorno) · [Despliegue](#despliegue) ·
@@ -34,6 +34,7 @@ que se repiten.
   - [Resúmenes](#resúmenes)
   - [Presupuestos](#presupuestos)
   - [Movimientos fijos](#movimientos-fijos)
+  - [Avisos al teléfono](#avisos-al-teléfono)
   - [Errores](#errores)
 - [Seguridad](#seguridad)
 - [El modelo de datos](#el-modelo-de-datos)
@@ -301,6 +302,56 @@ El ritmo va en **meses anclados a un mes de inicio**, en lugar de un enum de fre
 se queda corto en cuanto alguien cobra cada dos meses. El día se recorta al mes: un fijo del
 31 vence el 28 en febrero.
 
+### Avisos al teléfono
+
+| Método | Ruta | Qué hace |
+| --- | --- | --- |
+| `GET` | `/push/config` | Si el servidor puede mandar avisos, y la clave pública VAPID para suscribirse |
+| `POST` | `/push/subscriptions` | Registra el dispositivo con la suscripción que entrega el navegador |
+| `DELETE` | `/push/subscriptions?endpoint=` | Da de baja el dispositivo |
+| `GET` | `/push/preferences` | Qué avisos quiere la cuenta |
+| `PATCH` | `/push/preferences` | Los cambia; lo ausente no se toca |
+| `POST` | `/push/test` | Manda un aviso de prueba y dice a cuántos dispositivos llegó |
+
+Los avisos llegan **aunque la aplicación esté cerrada**. No los pide nadie: una tarea de la
+propia API corre en el minuto 5 de cada hora y avisa de dos cosas.
+
+| Aviso | Cuándo |
+| --- | --- |
+| **Fijo por vencer** | El día antes y el mismo día, si sigue pendiente (ni confirmado ni omitido) |
+| **Presupuesto al límite** | Al llegar al 90 % de lo presupuestado y al pasarse. Si salta de golpe por encima, solo el segundo |
+
+<details>
+<summary><strong>Cómo funciona, y por qué no se repite ni sale de madrugada</strong></summary>
+
+<br>
+
+- **Web Push estándar, sin dependencias.** El navegador entrega una suscripción al aceptar el
+  permiso; la API cifra cada mensaje para ese navegador (RFC 8291), lo firma con sus claves VAPID
+  (RFC 8292) y se lo manda al servicio de push de Google, Apple, Mozilla o Microsoft, que lo
+  entrega al teléfono. El servicio no puede leerlo. Todo está hecho con la JDK en
+  [`util/push/WebPushCrypto`](src/main/java/com/sreyes/finscope/util/push/WebPushCrypto.java), y
+  su prueba reproduce byte a byte el ejemplo del propio RFC.
+- **La tarea vive dentro de la API** porque la instancia de producción es de pago y no se
+  duerme. **En un plan que suspende el servicio sin tráfico dejaría de ejecutarse en silencio.**
+- **Cada hora y no una vez al día:** un reinicio o un despliegue justo a la hora de avisar se
+  comería el aviso; así sale en la pasada siguiente.
+- **Ningún aviso se repite.** Se apunta en `notification_log` *antes* de mandarse, con una
+  restricción de unicidad por usuario, tipo, fijo o presupuesto y fecha. Dos pasadas, dos
+  arranques o dos instancias no pueden mandar el mismo. Si no llega a ningún dispositivo por un
+  fallo pasajero, el apunte se retira y se reintenta a la hora siguiente.
+- **El día se decide en hora de Lima, no del servidor.** El contenedor corre en UTC, y con su
+  reloj a las 20:00 de Lima ya sería «mañana». Solo se avisa entre las 8:00 y las 21:00.
+- **La regla de cuándo vence un fijo es la misma** que usan la pantalla de fijos y lo
+  comprometido de los presupuestos, y lo gastado se cuenta como en la barra: el aviso no puede
+  decir algo que la pantalla contradiga.
+- **Las suscripciones muertas se borran solas:** el servicio de push responde 404 o 410 cuando
+  el usuario quitó el permiso o desinstaló la aplicación.
+- **La suscripción es del dispositivo, no de la cuenta.** Si en el mismo teléfono entra otra
+  persona y activa los avisos, la fila pasa a ser suya.
+
+</details>
+
 ### Errores
 
 Todo fallo responde con el mismo cuerpo, que trae un **código estable de negocio** además del
@@ -316,18 +367,19 @@ estado HTTP:
 ```
 
 <details>
-<summary><strong>Los 24 códigos</strong></summary>
+<summary><strong>Los 26 códigos</strong></summary>
 
 <br>
 
 | Estado | Códigos |
 | --- | --- |
-| `400` | `INVALID_DATE_FILTER`, `INVALID_SORT`, `CATEGORY_NOT_APPLICABLE`, `EXCHANGE_RATE_REQUIRED`, `EXCHANGE_RATE_NOT_APPLICABLE`, `RECURRING_DATE_OUT_OF_PERIOD`, `RECURRING_NOT_DUE` |
+| `400` | `INVALID_DATE_FILTER`, `INVALID_SORT`, `CATEGORY_NOT_APPLICABLE`, `EXCHANGE_RATE_REQUIRED`, `EXCHANGE_RATE_NOT_APPLICABLE`, `RECURRING_DATE_OUT_OF_PERIOD`, `RECURRING_NOT_DUE`, `PUSH_ENDPOINT_NOT_ALLOWED` |
 | `401` | `UNAUTHENTICATED`, `INVALID_CREDENTIALS`, `INVALID_REFRESH_TOKEN`, `INVALID_ACCOUNT_TOKEN` |
 | `403` | `SYSTEM_CATEGORY_PROTECTED` |
 | `404` | `TRANSACTION_NOT_FOUND`, `TRANSACTION_TYPE_NOT_FOUND`, `CATEGORY_NOT_FOUND`, `TAG_NOT_FOUND`, `BUDGET_NOT_FOUND`, `RECURRING_NOT_FOUND` |
 | `409` | `EMAIL_ALREADY_REGISTERED`, `CATEGORY_NAME_ALREADY_USED`, `TAG_NAME_ALREADY_USED`, `BUDGET_ALREADY_SET`, `RECURRING_ALREADY_CONFIRMED`, `RECURRING_SKIPPED` |
 | `429` | `TOO_MANY_ATTEMPTS` |
+| `503` | `PUSH_NOT_CONFIGURED` |
 
 Los produce [`GlobalExceptionHandler`](src/main/java/com/sreyes/finscope/exception/handler/GlobalExceptionHandler.java)
 a partir de las excepciones de
@@ -350,6 +402,7 @@ a partir de las excepciones de
 | **Enlaces del correo** | Guardados solo como hash SHA-256, de un solo uso, caducan (24 h verificar, 1 h las otras dos) y emitir uno nuevo borra el anterior |
 | **Cabeceras** | HSTS, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, CSP que lo niega todo y `Permissions-Policy` sin cámara, micrófono ni ubicación |
 | **CORS** | Solo los orígenes de `CORS_ALLOWED_ORIGINS`. Sin la variable, ninguno |
+| **Avisos al teléfono** | La API hace peticiones a la dirección que manda el cliente al suscribirse, así que **solo acepta las de los servicios de push conocidos**, por HTTPS y en su puerto. Sin esa lista, cualquiera con cuenta podría usar el servidor para llamar a direcciones internas |
 | **Registro** | Las categorías del driver que vuelcan sentencias y parámetros —el hash de la contraseña entre ellos— quedan fijadas por encima de `DEBUG` en producción |
 
 No hay CSRF, formulario de acceso ni autenticación básica: sin cookies de sesión no hay
@@ -359,7 +412,7 @@ credencial que el navegador adjunte por su cuenta, que es lo que CSRF explota.
 
 ## El modelo de datos
 
-Trece tablas, todas colgando del usuario.
+Dieciséis tablas, todas colgando del usuario.
 
 | Tabla | Para qué |
 | --- | --- |
@@ -376,6 +429,9 @@ Trece tablas, todas colgando del usuario.
 | `recurring_transactions` | La plantilla del fijo, con su ritmo y su ancla |
 | `recurring_tags` | Los tags que hereda el movimiento que confirma un fijo |
 | `recurring_skips` | Los meses omitidos de cada fijo |
+| `push_subscriptions` | Los dispositivos suscritos a los avisos; la dirección es única y manda sobre el usuario |
+| `notification_preferences` | Qué avisos quiere cada cuenta. Sin fila, todos encendidos |
+| `notification_log` | Qué se avisó ya, para que ningún aviso se repita |
 
 Las migraciones son de Flyway y se aplican al arrancar. Cada una que añade tablas trae además
 **su reverso** en un `.sql.txt` al lado, por si hay que deshacer un despliegue.
@@ -386,14 +442,14 @@ Las migraciones son de Flyway y se aplican al arrancar. Cada una que añade tabl
 
 ```
 src/main/java/com/sreyes/finscope/
-├── controller/      8 controladores REST; implementan las interfaces del contrato
+├── controller/      9 controladores REST; implementan las interfaces del contrato
 ├── service/         las reglas de negocio, con impl/ aparte de la interfaz
 ├── repository/      R2DBC, más el SQL a medida de búsquedas y agregados
 ├── model/
-│   ├── entity/      las 13 tablas
+│   ├── entity/      las tablas
 │   └── query/       proyecciones y criterios de consulta
 ├── security/        JWT, CORS, cupo por origen, intentos de acceso
-├── exception/       24 excepciones de negocio y el manejador que las traduce
+├── exception/       26 excepciones de negocio y el manejador que las traduce
 ├── util/
 │   ├── mapper/      MapStruct: entidad ⟷ DTO
 │   ├── rules/       invariantes que usan varios servicios
@@ -404,7 +460,7 @@ src/main/java/com/sreyes/finscope/
 
 src/main/resources/
 ├── openapi/         el contrato: la fuente de la verdad
-├── db/migration/    V1…V10, cada una con su reverso
+├── db/migration/    V1…V11, cada una con su reverso
 └── application*.yml común, dev y prod
 ```
 
@@ -479,6 +535,9 @@ apuntando a otro sitio o firmando con una clave conocida.
 | `FORWARD_HEADERS_STRATEGY` | `framework` | `none` si no hay proxy inverso delante |
 | `FLYWAY_ENABLED` | `true` | |
 | `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD` | sin servidor | SMTP estándar |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | sin claves | Claves de los avisos al teléfono. Sin ellas los avisos quedan apagados |
+| `VAPID_SUBJECT` | `mailto:no-reply@fin-scope.app` | Contacto del remitente para los servicios de push |
+| `PUSH_ZONE` | `America/Lima` | Zona en la que se decide qué día es y a qué hora se avisa |
 
 > [!NOTE]
 > **Sin `MAIL_HOST` la aplicación arranca igual y todo lo demás funciona.** Lo que no sale es
@@ -492,6 +551,18 @@ apuntando a otro sitio o firmando con una clave conocida.
 > (`MAIL_SMTP_SSL=true` y `MAIL_SMTP_STARTTLS=false` — los dos modos son **excluyentes** y
 > encender ambos deja la conexión colgada).
 
+> [!IMPORTANT]
+> **Las claves VAPID se generan una vez y no se cambian.** Cada teléfono suscrito queda atado a
+> la clave pública con la que se suscribió: cambiarla lo deja sin avisos hasta que los vuelva a
+> activar. Se generan con Node 18 o superior:
+>
+> ```bash
+> node -e "const c=require('crypto');const k=c.generateKeyPairSync('ec',{namedCurve:'prime256v1'});const j=k.privateKey.export({format:'jwk'});console.log('VAPID_PUBLIC_KEY='+Buffer.concat([Buffer.from([4]),Buffer.from(j.x,'base64url'),Buffer.from(j.y,'base64url')]).toString('base64url'));console.log('VAPID_PRIVATE_KEY='+j.d)"
+> ```
+>
+> La privada es un secreto, igual que `JWT_SECRET`. Si las dos claves no forman pareja, la
+> aplicación **no arranca**: lo contrario sería que todos los envíos se rechazaran en silencio.
+
 La lista completa está en [`.env.example`](.env.example).
 
 ---
@@ -499,7 +570,7 @@ La lista completa está en [`.env.example`](.env.example).
 ## Pruebas y CI
 
 ```bash
-./mvnw verify          # genera desde el contrato, compila y ejecuta las 279 pruebas
+./mvnw verify          # genera desde el contrato, compila y ejecuta las 312 pruebas
 ./mvnw test            # solo las pruebas
 ```
 
@@ -562,7 +633,7 @@ forma aditiva. `./mvnw verify` regenera la interfaz y falla hasta que el control
 implementa.
 
 **Un cambio de esquema** → un archivo nuevo en
-[`db/migration`](src/main/resources/db/migration) (`V11__...sql`), con su reverso al lado. **Las
+[`db/migration`](src/main/resources/db/migration) (`V12__...sql`), con su reverso al lado. **Las
 migraciones ya aplicadas no se editan**: Flyway guarda su huella y rechazaría el arranque.
 Al desplegar, Flyway aplica **todas las pendientes en orden**, no solo la última: una base que
 esté en V8 pasa por V9 y V10 en el mismo arranque.
