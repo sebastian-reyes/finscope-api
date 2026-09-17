@@ -83,6 +83,46 @@ class PushPropertiesTest {
         .hasMessageContaining("does not match");
   }
 
+  @Test
+  @DisplayName("Dice que las claves están intercambiadas sin enseñarlas")
+  void detectsSwappedKeys() {
+    KeyPair pair = WebPushCrypto.generateKeyPair();
+    PushProperties right = properties(pair.getPublic(), pair.getPrivate());
+    PushProperties swapped = new PushProperties(right.privateKey(), right.publicKey(), null,
+        null, null, null, null, null);
+
+    assertThatThrownBy(() -> new VapidKeys(swapped))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("swapped")
+        .hasMessageNotContaining(right.privateKey());
+  }
+
+  @Test
+  @DisplayName("Dice cuántos caracteres tiene una clave copiada a medias")
+  void detectsIncompleteKey() {
+    KeyPair pair = WebPushCrypto.generateKeyPair();
+    PushProperties right = properties(pair.getPublic(), pair.getPrivate());
+    PushProperties cut = new PushProperties(right.publicKey().substring(0, 60),
+        right.privateKey(), null, null, null, null, null, null);
+
+    assertThatThrownBy(() -> new VapidKeys(cut))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("VAPID_PUBLIC_KEY has 60 characters");
+  }
+
+  @Test
+  @DisplayName("Detecta la línea entera pegada con el nombre de la variable")
+  void detectsPastedVariableName() {
+    KeyPair pair = WebPushCrypto.generateKeyPair();
+    PushProperties right = properties(pair.getPublic(), pair.getPrivate());
+    PushProperties pasted = new PushProperties("VAPID_PUBLIC_KEY=" + right.publicKey(),
+        right.privateKey(), null, null, null, null, null, null);
+
+    assertThatThrownBy(() -> new VapidKeys(pasted))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("without the variable name");
+  }
+
   private static PushProperties properties(java.security.PublicKey publicKey,
                                            java.security.PrivateKey privateKey) {
     byte[] raw = ((ECPrivateKey) privateKey).getS().toByteArray();

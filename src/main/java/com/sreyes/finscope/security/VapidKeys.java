@@ -76,15 +76,36 @@ public class VapidKeys {
     return "vapid t=" + token + ", k=" + properties.publicKey();
   }
 
+  /**
+   * Interpreta y comprueba las dos claves.
+   *
+   * <p>Los mensajes dicen qué está mal sin enseñar las claves: cuántos caracteres tiene cada
+   * una y en cuántos bytes se convierte. Es lo que hace falta para distinguir los tres errores
+   * que se cometen al copiarlas en un panel de variables —intercambiarlas, copiar un trozo o
+   * pegar la línea entera con el nombre de la variable delante— sin que el secreto acabe en el
+   * registro del despliegue.</p>
+   */
   private static PrivateKey load(PushProperties properties) {
+    byte[] rawPublic = decode("VAPID_PUBLIC_KEY", properties.publicKey());
+    byte[] rawPrivate = decode("VAPID_PRIVATE_KEY", properties.privateKey());
+    if (rawPublic.length == WebPushCrypto.PRIVATE_KEY_LENGTH
+        && rawPrivate.length == WebPushCrypto.PUBLIC_KEY_LENGTH) {
+      throw new IllegalStateException("VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY look swapped: the "
+          + "public key is the long one (87 characters, starting with B) and the private key "
+          + "the short one (43 characters)");
+    }
+    requireLength("VAPID_PUBLIC_KEY", properties.publicKey(), rawPublic,
+        WebPushCrypto.PUBLIC_KEY_LENGTH, "87 characters starting with B");
+    requireLength("VAPID_PRIVATE_KEY", properties.privateKey(), rawPrivate,
+        WebPushCrypto.PRIVATE_KEY_LENGTH, "43 characters");
     ECPublicKey publicKey;
     PrivateKey privateKey;
     try {
-      publicKey = WebPushCrypto.publicKey(WebPushCrypto.decode(properties.publicKey()));
-      privateKey = WebPushCrypto.privateKey(WebPushCrypto.decode(properties.privateKey()));
+      publicKey = WebPushCrypto.publicKey(rawPublic);
+      privateKey = WebPushCrypto.privateKey(rawPrivate);
     } catch (IllegalArgumentException ex) {
-      throw new IllegalStateException("VAPID keys are malformed: the public key must be an "
-          + "uncompressed P-256 point and the private key a 32-byte scalar, both Base64 URL", ex);
+      throw new IllegalStateException("VAPID_PUBLIC_KEY is not a valid P-256 public key; "
+          + "generate the pair again with the command in .env.example", ex);
     }
     String probe = "finscope-vapid-check";
     if (!WebPushCrypto.verify(probe, WebPushCrypto.sign(probe, privateKey), publicKey)) {
@@ -92,5 +113,28 @@ public class VapidKeys {
           "VAPID_PUBLIC_KEY does not match VAPID_PRIVATE_KEY: they must be the same key pair");
     }
     return privateKey;
+  }
+
+  private static byte[] decode(String variable, String value) {
+    if (value.startsWith("VAPID_") || value.contains("=B") || value.startsWith("\"")
+        || value.startsWith("'")) {
+      throw new IllegalStateException(variable + " must contain only the key, without the "
+          + "variable name or quotes (" + value.length() + " characters found)");
+    }
+    try {
+      return WebPushCrypto.decode(value);
+    } catch (IllegalArgumentException ex) {
+      throw new IllegalStateException(variable + " is not Base64 URL (" + value.length()
+          + " characters found); copy the key again without spaces or line breaks", ex);
+    }
+  }
+
+  private static void requireLength(String variable, String value, byte[] raw, int expected,
+                                    String shape) {
+    if (raw.length != expected) {
+      throw new IllegalStateException(variable + " has " + value.length() + " characters ("
+          + raw.length + " bytes) but must have " + shape + " (" + expected + " bytes); it "
+          + "was probably copied incomplete");
+    }
   }
 }
