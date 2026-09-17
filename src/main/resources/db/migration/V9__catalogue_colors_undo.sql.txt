@@ -1,0 +1,15 @@
+-- Reverso de V9__catalogue_colors.sql.
+--
+-- No lo aplica Flyway: se guarda como texto para poder deshacer el cambio a mano si hiciera
+-- falta, igual que el resto de reversos del proyecto.
+--
+-- Se pierden los colores elegidos. Las categorias y los tags siguen en su sitio y vuelven a
+-- pintarse con el color que el cliente deduce de su nombre.
+
+ALTER TABLE tags
+    DROP CONSTRAINT IF EXISTS ck_tags_color,
+    DROP COLUMN IF EXISTS color;
+
+ALTER TABLE categories
+    DROP CONSTRAINT IF EXISTS ck_categories_color,
+    DROP COLUMN IF EXISTS color;

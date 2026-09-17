@@ -11,6 +11,7 @@ import com.sreyes.finscope.repository.RecurringTransactionRepository;
 import com.sreyes.finscope.repository.TransactionRepository;
 import com.sreyes.finscope.service.CategoryService;
 import com.sreyes.finscope.util.constants.Constants;
+import com.sreyes.finscope.util.rules.ChipStyleRules;
 import java.util.List;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
@@ -71,7 +72,8 @@ public class CategoryServiceImpl implements CategoryService {
   }
 
   @Override
-  public Mono<CategoryUsage> createCategory(Long userId, String name, CategoryScope appliesTo) {
+  public Mono<CategoryUsage> createCategory(Long userId, String name, CategoryScope appliesTo,
+                                            String color, String icon) {
     String trimmed = name.trim();
     CategoryScope scope = appliesTo == null ? CategoryScope.EXPENSE : appliesTo;
     return requireNameAvailable(userId, trimmed, null)
@@ -79,13 +81,18 @@ public class CategoryServiceImpl implements CategoryService {
             scope.getValue(), false)))
         .then(Mono.defer(() -> categoryRepository.findByUserIdAndName(userId, trimmed)))
         .switchIfEmpty(Mono.error(alreadyUsed(trimmed)))
+        .flatMap(category -> color == null && icon == null
+            ? Mono.just(category)
+            : saveStyle(category, color, icon))
         .map(category -> new CategoryUsage(category.getId(), category.getName(),
-            category.getAppliesTo(), category.isSystem(), 0L));
+            category.getAppliesTo(), category.isSystem(), category.getColor(), category.getIcon(),
+            0L));
   }
 
   @Override
   public Mono<CategoryUsage> updateCategory(Long userId, Long id, String name,
-                                            CategoryScope appliesTo) {
+                                            CategoryScope appliesTo, String color,
+                                            String icon) {
     String trimmed = name.trim();
     return requireCategory(userId, id)
         .flatMap(category -> requireNameAvailable(userId, trimmed, category.getId())
@@ -95,6 +102,7 @@ public class CategoryServiceImpl implements CategoryService {
           if (appliesTo != null) {
             category.setAppliesTo(appliesTo.getValue());
           }
+          applyStyle(category, color, icon);
           return categoryRepository.save(category);
         })
         .flatMap(category -> categoryRepository.findUsageByUserIdAndId(userId, category.getId()));
@@ -150,6 +158,37 @@ public class CategoryServiceImpl implements CategoryService {
         .switchIfEmpty(Mono.defer(() -> categoryRepository
             .insertIfAbsent(userId, FALLBACK_NAME, CategoryScope.BOTH.getValue(), true)
             .then(categoryRepository.findSystemByUserId(userId))));
+  }
+
+  /**
+   * Guarda el color y el icono de una categoría recién dada de alta.
+   * El alta en sí no los lleva porque la comparte con la siembra del catálogo inicial, que
+   * nunca trae ninguno; quien los elige al crear paga una escritura más.
+   *
+   * @param category categoría ya persistida
+   * @param color    color tal y como llega en la petición, nulo si no se eligió
+   * @param icon     icono tal y como llega en la petición, nulo si no se eligió
+   * @return la categoría con su aspecto guardado
+   */
+  private Mono<Category> saveStyle(Category category, String color, String icon) {
+    applyStyle(category, color, icon);
+    return categoryRepository.save(category);
+  }
+
+  /**
+   * Aplica el color y el icono recibidos, dejando como está el que no venga.
+   *
+   * @param category categoría a modificar
+   * @param color    color tal y como llega en la petición, nulo para conservarlo
+   * @param icon     icono tal y como llega en la petición, nulo para conservarlo
+   */
+  private void applyStyle(Category category, String color, String icon) {
+    if (color != null) {
+      category.setColor(ChipStyleRules.toStored(color));
+    }
+    if (icon != null) {
+      category.setIcon(ChipStyleRules.toStored(icon));
+    }
   }
 
   /**

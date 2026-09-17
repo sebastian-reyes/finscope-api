@@ -59,8 +59,8 @@ class CategoryControllerTest {
   @DisplayName("Devuelve el catálogo del usuario con el uso de cada categoría")
   void listsCategoriesWithUsage() {
     when(categoryService.findCategories(USER_ID)).thenReturn(Flux.just(
-        new CategoryUsage(CATEGORY_ID, "Comida", "EXPENSE", false, 12L),
-        new CategoryUsage(1L, "Otros", "BOTH", true, 3L)));
+        new CategoryUsage(CATEGORY_ID, "Comida", "EXPENSE", false, null, null, 12L),
+        new CategoryUsage(1L, "Otros", "BOTH", true, null, null, 3L)));
 
     webTestClient.get().uri("/categories")
         .exchange()
@@ -81,8 +81,8 @@ class CategoryControllerTest {
   @Test
   @DisplayName("Crea una categoría y responde 201 sin uso")
   void createsCategory() {
-    when(categoryService.createCategory(eq(USER_ID), eq("Mascotas"), any()))
-        .thenReturn(Mono.just(new CategoryUsage(9L, "Mascotas", "EXPENSE", false, 0L)));
+    when(categoryService.createCategory(eq(USER_ID), eq("Mascotas"), any(), any(), any()))
+        .thenReturn(Mono.just(new CategoryUsage(9L, "Mascotas", "EXPENSE", false, null, null, 0L)));
 
     webTestClient.post().uri("/categories")
         .bodyValue(Map.of("name", "Mascotas", "appliesTo", "EXPENSE"))
@@ -97,8 +97,8 @@ class CategoryControllerTest {
   @Test
   @DisplayName("Toma egresos como ámbito por defecto al no informarlo")
   void defaultsScopeToExpense() {
-    when(categoryService.createCategory(USER_ID, "Mascotas", null))
-        .thenReturn(Mono.just(new CategoryUsage(9L, "Mascotas", "EXPENSE", false, 0L)));
+    when(categoryService.createCategory(USER_ID, "Mascotas", null, null, null))
+        .thenReturn(Mono.just(new CategoryUsage(9L, "Mascotas", "EXPENSE", false, null, null, 0L)));
 
     webTestClient.post().uri("/categories")
         .bodyValue(Map.of("name", "Mascotas"))
@@ -120,7 +120,7 @@ class CategoryControllerTest {
   @Test
   @DisplayName("Traduce en 409 el nombre de categoría ya ocupado")
   void translatesDuplicatedName() {
-    when(categoryService.createCategory(eq(USER_ID), eq("Comida"), any()))
+    when(categoryService.createCategory(eq(USER_ID), eq("Comida"), any(), any(), any()))
         .thenReturn(Mono.error(
             new CategoryNameAlreadyUsedException("A category named Comida already exists")));
 
@@ -136,8 +136,9 @@ class CategoryControllerTest {
   @DisplayName("Actualiza el nombre y el ámbito de una categoría")
   void updatesCategory() {
     when(categoryService.updateCategory(USER_ID, CATEGORY_ID, "Alimentación",
-        CategoryScope.BOTH))
-        .thenReturn(Mono.just(new CategoryUsage(CATEGORY_ID, "Alimentación", "BOTH", false, 12L)));
+        CategoryScope.BOTH, null, null))
+        .thenReturn(Mono.just(
+            new CategoryUsage(CATEGORY_ID, "Alimentación", "BOTH", false, null, null, 12L)));
 
     webTestClient.patch().uri("/categories/{id}", CATEGORY_ID)
         .bodyValue(Map.of("name", "Alimentación", "appliesTo", "BOTH"))
@@ -152,7 +153,7 @@ class CategoryControllerTest {
   @Test
   @DisplayName("Traduce en 404 la categoría inexistente")
   void translatesNotFound() {
-    when(categoryService.updateCategory(eq(USER_ID), eq(99L), any(), any()))
+    when(categoryService.updateCategory(eq(USER_ID), eq(99L), any(), any(), any(), any()))
         .thenReturn(Mono.error(new CategoryNotFoundException("Category not found with id: 99")));
 
     webTestClient.patch().uri("/categories/99")
@@ -187,5 +188,25 @@ class CategoryControllerTest {
         .expectStatus().isEqualTo(409)
         .expectBody()
         .jsonPath("$.code").isEqualTo("SYSTEM_CATEGORY_PROTECTED");
+  }
+
+  @Test
+  @DisplayName("Acepta auto y un color libre en mayúsculas al actualizar")
+  void acceptsAutoAndUppercaseHex() {
+    when(categoryService.updateCategory(eq(USER_ID), eq(CATEGORY_ID), any(), any(), any(), any()))
+        .thenReturn(Mono.just(new CategoryUsage(CATEGORY_ID, "Comida", "EXPENSE", false,
+            null, null, 12L)));
+
+    webTestClient.patch().uri("/categories/{id}", CATEGORY_ID)
+        .bodyValue(Map.of("name", "Comida", "color", "auto"))
+        .exchange()
+        .expectStatus().isOk();
+
+    webTestClient.patch().uri("/categories/{id}", CATEGORY_ID)
+        .bodyValue(Map.of("name", "Comida", "color", "#E8A33D"))
+        .exchange()
+        .expectStatus().isOk();
+
+    verify(categoryService).updateCategory(USER_ID, CATEGORY_ID, "Comida", null, "#E8A33D", null);
   }
 }

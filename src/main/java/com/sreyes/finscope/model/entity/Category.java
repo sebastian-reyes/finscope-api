@@ -54,4 +54,18 @@ public class Category {
    */
   @Column("is_system")
   private boolean system;
+
+  /**
+   * Color elegido para su ficha: `preset-0` a `preset-7` o `#rrggbb`. Nulo mientras no se
+   * elija, que es cuando el cliente lo deduce del nombre.
+   */
+  @Column("color")
+  private String color;
+
+  /**
+   * Icono elegido para su ficha, sin prefijo (`basket`). Nulo mientras no se elija, que es
+   * cuando el cliente lo deduce del nombre.
+   */
+  @Column("icon")
+  private String icon;
 }

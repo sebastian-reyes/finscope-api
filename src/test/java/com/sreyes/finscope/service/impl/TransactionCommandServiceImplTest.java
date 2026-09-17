@@ -93,7 +93,8 @@ class TransactionCommandServiceImplTest {
     when(transactionTypeRepository.findById(2L))
         .thenReturn(Mono.just(new TransactionType(2L, "Egreso", "EXPENSE")));
     when(categoryRepository.findByIdAndUserId(3L, USER_ID))
-        .thenReturn(Mono.just(new Category(3L, USER_ID, "Entretenimiento", "EXPENSE", false)));
+        .thenReturn(Mono.just(
+            new Category(3L, USER_ID, "Entretenimiento", "EXPENSE", false, null, null)));
     when(transactionRepository.save(any(Transaction.class)))
         .thenAnswer(invocation -> {
           Transaction transaction = invocation.getArgument(0);
@@ -122,7 +123,7 @@ class TransactionCommandServiceImplTest {
           List<Tag> tags = new java.util.ArrayList<>();
           long id = 100L;
           for (String lowerName : lowerNames) {
-            tags.add(new Tag(id++, userId, lowerName));
+            tags.add(new Tag(id++, userId, lowerName, null, null));
           }
           return Flux.fromIterable(tags);
         });
@@ -274,7 +275,7 @@ class TransactionCommandServiceImplTest {
   void rejectsCategoryThatDoesNotAdmitTheType() {
     givenValidReferences();
     when(categoryRepository.findByIdAndUserId(3L, USER_ID))
-        .thenReturn(Mono.just(new Category(3L, USER_ID, "Salario", "INCOME", false)));
+        .thenReturn(Mono.just(new Category(3L, USER_ID, "Salario", "INCOME", false, null, null)));
 
     StepVerifier.create(transactionCommandService.createTransaction(USER_ID, createRequest(null)))
         .expectError(CategoryNotApplicableException.class)
@@ -288,7 +289,7 @@ class TransactionCommandServiceImplTest {
   void acceptsCategoryThatAppliesToBoth() {
     givenValidReferences();
     when(categoryRepository.findByIdAndUserId(3L, USER_ID))
-        .thenReturn(Mono.just(new Category(3L, USER_ID, "Otros", "BOTH", true)));
+        .thenReturn(Mono.just(new Category(3L, USER_ID, "Otros", "BOTH", true, null, null)));
 
     StepVerifier.create(transactionCommandService.createTransaction(USER_ID, createRequest(null)))
         .expectNextCount(1)
@@ -302,7 +303,7 @@ class TransactionCommandServiceImplTest {
     when(transactionRepository.findByIdAndUserId(10L, USER_ID))
         .thenReturn(Mono.just(existingTransaction()));
     when(categoryRepository.findByIdAndUserId(9L, USER_ID))
-        .thenReturn(Mono.just(new Category(9L, USER_ID, "Comida", "EXPENSE", false)));
+        .thenReturn(Mono.just(new Category(9L, USER_ID, "Comida", "EXPENSE", false, null, null)));
     UpdateTransactionRequest request = new UpdateTransactionRequest();
     request.setCategoryId(9L);
 
@@ -475,7 +476,7 @@ class TransactionCommandServiceImplTest {
   void reusesExistingTagWrittenWithAnotherCase() {
     givenValidReferences();
     doReturn(Mono.just(0L)).when(tagRepository).insertIfAbsent(USER_ID, "casa");
-    doReturn(Flux.just(new Tag(55L, USER_ID, "Casa")))
+    doReturn(Flux.just(new Tag(55L, USER_ID, "Casa", null, null)))
         .when(tagRepository).findByUserIdAndLowerNameIn(eq(USER_ID), any());
 
     StepVerifier.create(transactionCommandService.createTransaction(USER_ID,

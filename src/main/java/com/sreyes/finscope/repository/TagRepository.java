@@ -138,12 +138,13 @@ public interface TagRepository extends R2dbcRepository<Tag, Long> {
    * @return flujo reactivo con los tags y su número de transacciones, en orden alfabético
    */
   @Query("""
-      SELECT t.id_tag AS tag_id, t.name_tag AS tag_name,
+      SELECT t.id_tag AS tag_id, t.name_tag AS tag_name, t.color AS tag_color,
+             t.icon AS tag_icon,
              COUNT(tt.transaction_id) AS transaction_count
       FROM tags t
       LEFT JOIN transaction_tags tt ON tt.tag_id = t.id_tag
       WHERE t.user_id = :userId
-      GROUP BY t.id_tag, t.name_tag
+      GROUP BY t.id_tag, t.name_tag, t.color, t.icon
       ORDER BY LOWER(t.name_tag)
       """)
   Flux<TagUsage> findUsageByUserId(Long userId);

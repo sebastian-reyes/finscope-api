@@ -22,5 +22,7 @@ public interface TagMapper {
    */
   @Mapping(target = "id", source = "tagId")
   @Mapping(target = "name", source = "tagName")
+  @Mapping(target = "color", source = "tagColor")
+  @Mapping(target = "icon", source = "tagIcon")
   TagResponse toResponse(TagUsage tagUsage);
 }

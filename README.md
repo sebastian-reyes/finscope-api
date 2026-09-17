@@ -11,8 +11,8 @@ que se repiten.
 [![WebFlux](https://img.shields.io/badge/WebFlux-reactiva-6DB33F)](https://docs.spring.io/spring-framework/reference/web/webflux.html)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![R2DBC](https://img.shields.io/badge/R2DBC-sin%20bloqueo-4169E1)](https://r2dbc.io/)
-[![OpenAPI](https://img.shields.io/badge/OpenAPI-6.7.0-85EA2D?logo=openapiinitiative&logoColor=black)](src/main/resources/openapi/finscope-api.yaml)
-[![Tests](https://img.shields.io/badge/tests-248%20verdes-success)](#pruebas-y-ci)
+[![OpenAPI](https://img.shields.io/badge/OpenAPI-6.8.0-85EA2D?logo=openapiinitiative&logoColor=black)](src/main/resources/openapi/finscope-api.yaml)
+[![Tests](https://img.shields.io/badge/tests-279%20verdes-success)](#pruebas-y-ci)
 
 [Arquitectura](#arquitectura) · [La API](#la-api) · [Arrancar](#arrancar) ·
 [Variables](#variables-de-entorno) · [Despliegue](#despliegue) ·
@@ -114,6 +114,9 @@ borrar una categoría, porque sus movimientos no se van con ella, se reasignan.
 por tanto se solapan, y por eso **no reparten importes**: para eso está la categoría, que es
 una sola.
 
+Categorías y tags pueden llevar además **un color y un icono elegidos**. Son opcionales: sin
+ellos, el cliente los deduce del nombre, que es como se veían antes de poder elegirse.
+
 **Presupuesto y movimiento fijo.** Las dos piezas que miran hacia delante. El presupuesto fija
 un importe por categoría, moneda y mes; el fijo es una **plantilla que no genera nada por su
 cuenta**: cada mes produce un pendiente, y confirmarlo es lo que crea el movimiento de verdad.
@@ -187,12 +190,37 @@ Un identificador ajeno responde **404 y no 403**, para no confirmar que existe.
 | `GET` | `/transaction-types/{id}` | Uno por identificador |
 | `GET` | `/categories` | Las del usuario, filtrables por ámbito |
 | `POST` | `/categories` | Crea una |
-| `PATCH` | `/categories/{id}` | Cambia el nombre o el ámbito al que aplica |
+| `PATCH` | `/categories/{id}` | Cambia el nombre, el ámbito, el color o el icono |
 | `DELETE` | `/categories/{id}` | Borra y **reasigna** sus movimientos a la de reserva |
 | `GET` | `/tags` | Los del usuario |
 | `POST` | `/tags` | Crea uno |
-| `PATCH` | `/tags/{id}` | Lo renombra |
+| `PATCH` | `/tags/{id}` | Lo renombra o cambia su color o su icono |
 | `DELETE` | `/tags/{id}` | Lo borra del catálogo y de sus movimientos |
+
+<details>
+<summary><strong>Color e icono de una categoría o un tag</strong></summary>
+
+<br>
+
+Los dos campos viajan en el alta (`POST`) y en la modificación (`PATCH`), y los dos son
+opcionales.
+
+| Campo | Valores | Qué significa |
+| --- | --- | --- |
+| `color` | `preset-0` … `preset-7` | Una de las ocho fichas de la paleta. No es un color fijo sino un sitio en la rueda: el cliente lo resuelve contra el color principal y el tema de cada usuario |
+| | `#rrggbb` | Un color libre. Se guarda en minúsculas; la tinta de encima la calcula el cliente por contraste |
+| `icon` | `basket`, `piggy-bank`… | El nombre del icono **sin prefijo**. La API no conoce la librería de iconos y solo comprueba la forma del nombre |
+| los dos | `auto` | Quita lo elegido y devuelve la ficha a lo deducido del nombre |
+
+**Un campo ausente no se toca, y por eso quitar un valor exige `auto`**: el generador trabaja
+con `openApiNullable=false`, así que un `null` en el cuerpo significa lo mismo que no mandar
+nada. En las respuestas, un campo sin elegir llega vacío.
+
+Un valor con otra forma responde **400** antes de llegar al servicio, y la base de datos repite
+la regla como restricción `CHECK`, para que nada que un cliente no sepa pintar llegue a
+guardarse.
+
+</details>
 
 ### Movimientos
 
@@ -340,8 +368,8 @@ Trece tablas, todas colgando del usuario.
 | `refresh_tokens` | Tokens de refresco, guardados solo como hash |
 | `account_tokens` | Los enlaces del correo: verificar, cambiar correo, restablecer contraseña |
 | `transaction_types` | Catálogo global: `INCOME` y `EXPENSE` |
-| `categories` | Catálogo por usuario, con la de reserva marcada y única |
-| `tags` | Catálogo por usuario, nombre único sin distinguir mayúsculas |
+| `categories` | Catálogo por usuario, con la de reserva marcada y única, y su color e icono si se eligieron |
+| `tags` | Catálogo por usuario, nombre único sin distinguir mayúsculas, con color e icono opcionales |
 | `transactions` | El movimiento. Índices por fecha, categoría y tipo |
 | `transaction_tags` | La relación de muchos a muchos con los tags |
 | `budgets` | Un importe por categoría, moneda y mes, único en esa combinación |
@@ -376,7 +404,7 @@ src/main/java/com/sreyes/finscope/
 
 src/main/resources/
 ├── openapi/         el contrato: la fuente de la verdad
-├── db/migration/    V1…V7, cada una con su reverso
+├── db/migration/    V1…V10, cada una con su reverso
 └── application*.yml común, dev y prod
 ```
 
@@ -471,7 +499,7 @@ La lista completa está en [`.env.example`](.env.example).
 ## Pruebas y CI
 
 ```bash
-./mvnw verify          # genera desde el contrato, compila y ejecuta las 248 pruebas
+./mvnw verify          # genera desde el contrato, compila y ejecuta las 279 pruebas
 ./mvnw test            # solo las pruebas
 ```
 
@@ -534,8 +562,10 @@ forma aditiva. `./mvnw verify` regenera la interfaz y falla hasta que el control
 implementa.
 
 **Un cambio de esquema** → un archivo nuevo en
-[`db/migration`](src/main/resources/db/migration) (`V8__...sql`), con su reverso al lado. **Las
+[`db/migration`](src/main/resources/db/migration) (`V11__...sql`), con su reverso al lado. **Las
 migraciones ya aplicadas no se editan**: Flyway guarda su huella y rechazaría el arranque.
+Al desplegar, Flyway aplica **todas las pendientes en orden**, no solo la última: una base que
+esté en V8 pasa por V9 y V10 en el mismo arranque.
 
 **Una regla que usan dos sitios** → a [`util/rules`](src/main/java/com/sreyes/finscope/util/rules),
 nunca copiada. Dos copias acaban discrepando sin que nadie sepa cuál miente.

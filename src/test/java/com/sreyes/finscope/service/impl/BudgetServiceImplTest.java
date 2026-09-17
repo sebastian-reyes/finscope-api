@@ -68,12 +68,12 @@ class BudgetServiceImplTest {
 
   /** Categoría de egresos, la que tiene sentido presupuestar. */
   private Category comida() {
-    return new Category(CATEGORY_ID, USER_ID, "Comida", "EXPENSE", false);
+    return new Category(CATEGORY_ID, USER_ID, "Comida", "EXPENSE", false, null, null);
   }
 
   /** Categoría de solo ingresos: nada que gastar contra lo que medirse. */
   private Category salario() {
-    return new Category(20L, USER_ID, "Salario", "INCOME", false);
+    return new Category(20L, USER_ID, "Salario", "INCOME", false, null, null);
   }
 
   private Budget budget() {
