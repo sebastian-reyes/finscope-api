@@ -11,7 +11,7 @@ que se repiten.
 [![WebFlux](https://img.shields.io/badge/WebFlux-reactiva-6DB33F)](https://docs.spring.io/spring-framework/reference/web/webflux.html)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![R2DBC](https://img.shields.io/badge/R2DBC-sin%20bloqueo-4169E1)](https://r2dbc.io/)
-[![OpenAPI](https://img.shields.io/badge/OpenAPI-6.9.0-85EA2D?logo=openapiinitiative&logoColor=black)](src/main/resources/openapi/finscope-api.yaml)
+[![OpenAPI](https://img.shields.io/badge/OpenAPI-6.10.0-85EA2D?logo=openapiinitiative&logoColor=black)](src/main/resources/openapi/finscope-api.yaml)
 [![Tests](https://img.shields.io/badge/tests-312%20verdes-success)](#pruebas-y-ci)
 
 [Arquitectura](#arquitectura) · [La API](#la-api) · [Arrancar](#arrancar) ·
@@ -170,7 +170,7 @@ Un identificador ajeno responde **404 y no 403**, para no confirmar que existe.
 | `POST` | 🔓 `/auth/refresh` | Renueva el acceso y **rota** el refresco |
 | `POST` | 🔓 `/auth/logout` | Revoca el token de refresco |
 | `GET` | `/auth/me` | El usuario autenticado |
-| `PATCH` | `/auth/me` | Cambia el nombre |
+| `PATCH` | `/auth/me` | Cambia el nombre y la imagen de perfil |
 | `POST` | `/auth/verify-email` | Manda el correo de verificación |
 | `POST` | 🔓 `/auth/verify-email/confirm` | Consume el enlace y da el correo por verificado |
 | `POST` | `/auth/change-email` | Solicita el cambio; exige la contraseña |
@@ -416,7 +416,7 @@ Dieciséis tablas, todas colgando del usuario.
 
 | Tabla | Para qué |
 | --- | --- |
-| `users` | La cuenta. Correo único sin distinguir mayúsculas |
+| `users` | La cuenta. Correo único sin distinguir mayúsculas, y la imagen de perfil si se eligió |
 | `user_identities` | Identidades externas, para el día que haya acceso con terceros |
 | `refresh_tokens` | Tokens de refresco, guardados solo como hash |
 | `account_tokens` | Los enlaces del correo: verificar, cambiar correo, restablecer contraseña |

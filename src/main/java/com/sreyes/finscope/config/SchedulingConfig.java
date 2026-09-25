@@ -28,7 +28,7 @@ import reactor.core.publisher.Mono;
 @RequiredArgsConstructor
 @ConditionalOnProperty(prefix = "finscope.push", name = "scheduler-enabled",
     havingValue = "true", matchIfMissing = true)
-public class SchedulingConfig {
+public class  SchedulingConfig {
 
   private final NotificationService notificationService;
 

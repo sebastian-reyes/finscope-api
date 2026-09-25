@@ -425,7 +425,7 @@ class AccountServiceImplTest {
    */
   private User user(boolean verified) {
     return new User(USER_ID, EMAIL, passwordEncoder.encode(PASSWORD), verified, "Sebastian",
-        true, LocalDateTime.now());
+        null, true, LocalDateTime.now());
   }
 
   /**
@@ -434,7 +434,7 @@ class AccountServiceImplTest {
    * @return el otro usuario
    */
   private User otherUser() {
-    return new User(99L, NEW_EMAIL, "hash", true, null, true, LocalDateTime.now());
+    return new User(99L, NEW_EMAIL, "hash", true, null, null, true, LocalDateTime.now());
   }
 
   /**

@@ -1,0 +1,10 @@
+-- Reverso de V12__user_avatar.sql.
+--
+-- No lo aplica Flyway: se guarda como texto para poder deshacer el cambio a mano si hiciera
+-- falta, igual que el resto de reversos del proyecto.
+--
+-- Se pierden las imagenes elegidas. Todas las cuentas vuelven a pintarse con sus iniciales.
+
+ALTER TABLE users
+    DROP CONSTRAINT IF EXISTS ck_users_avatar,
+    DROP COLUMN IF EXISTS avatar;

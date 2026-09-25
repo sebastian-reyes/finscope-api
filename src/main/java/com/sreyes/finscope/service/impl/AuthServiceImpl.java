@@ -28,6 +28,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Base64;
+import java.util.Locale;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -54,6 +55,11 @@ public class AuthServiceImpl implements AuthService {
    * Longitud del valor con el que se genera el hash de comparación de descarte.
    */
   private static final int DUMMY_SECRET_BYTES = 32;
+
+  /**
+   * Valor con el que el cliente pide quitar la imagen de perfil y volver a las iniciales.
+   */
+  private static final String AVATAR_INITIALS = "initials";
 
   private final UserRepository userRepository;
   private final UserIdentityRepository userIdentityRepository;
@@ -193,6 +199,9 @@ public class AuthServiceImpl implements AuthService {
           // si lo es, y deja la cuenta sin nombre, que es como puede nacer.
           if (request.getDisplayName() != null) {
             user.setDisplayName(normaliseDisplayName(request.getDisplayName()));
+          }
+          if (request.getAvatar() != null) {
+            user.setAvatar(normaliseAvatar(request.getAvatar()));
           }
           return userRepository.save(user);
         })
@@ -422,6 +431,19 @@ public class AuthServiceImpl implements AuthService {
   }
 
   /**
+   * Deja la imagen de perfil como se va a guardar: en minúsculas, y nula si se pide volver a
+   * las iniciales. Las iniciales no son una imagen más sino la ausencia de imagen, así que se
+   * guardan como tal y el cliente no tiene que distinguir dos formas de lo mismo.
+   *
+   * @param avatar imagen tal y como ha llegado, ya validada por el contrato
+   * @return la imagen lista para guardar, o nula si se vuelve a las iniciales
+   */
+  private String normaliseAvatar(String avatar) {
+    String lowered = avatar.trim().toLowerCase(Locale.ROOT);
+    return AVATAR_INITIALS.equals(lowered) ? null : lowered;
+  }
+
+  /**
    * Construye la representacion publica de un usuario.
    *
    * @param user usuario a representar
@@ -431,6 +453,7 @@ public class AuthServiceImpl implements AuthService {
     UserResponse response =
         new UserResponse(user.getId(), user.getEmail(), user.isEmailVerified());
     response.setDisplayName(user.getDisplayName());
+    response.setAvatar(user.getAvatar());
     return response;
   }
 }

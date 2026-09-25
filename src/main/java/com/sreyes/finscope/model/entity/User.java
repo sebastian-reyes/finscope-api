@@ -46,6 +46,13 @@ public class User {
   @Column("display_name")
   private String displayName;
 
+  /**
+   * Imagen de perfil elegida, por el nombre de la ilustración que pinta el cliente. Nula
+   * mientras no se elija, y entonces el perfil se pinta con las iniciales.
+   */
+  @Column("avatar")
+  private String avatar;
+
   @Column("active")
   private boolean active;
 

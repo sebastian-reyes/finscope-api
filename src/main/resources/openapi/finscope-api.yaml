@@ -51,7 +51,7 @@ info:
     Todos los recursos financieros pertenecen al usuario autenticado y estan aislados
     entre usuarios. Salvo los endpoints de autenticacion, todas las operaciones exigen
     un token de acceso.
-  version: 6.9.0
+  version: 6.10.0
 servers:
   - url: /
     description: Servidor local
@@ -209,12 +209,12 @@ paths:
       tags: [auth]
       summary: Actualiza los datos del usuario autenticado
       description: |
-        Cambia el nombre con el que el usuario se presenta. El correo no se toca aqui: es
-        la credencial con la que se entra, y cambiarlo obligaria a rehacer la identidad
-        local y a reemitir las credenciales, que es otra operacion.
+        Cambia el nombre con el que el usuario se presenta y su imagen de perfil. El correo
+        no se toca aqui: es la credencial con la que se entra, y cambiarlo obligaria a
+        rehacer la identidad local y a reemitir las credenciales, que es otra operacion.
         Como en el resto de la API, un campo ausente se deja como esta; el nombre en blanco
         si es un cambio, y lo deja sin poner, que es el estado con el que puede nacer una
-        cuenta.
+        cuenta. La imagen vuelve a las iniciales con `initials`.
       operationId: updateCurrentUser
       requestBody:
         required: true
@@ -1782,6 +1782,28 @@ components:
           description: |
             Nombre con el que el usuario se presenta en la aplicacion. En blanco lo deja
             sin poner.
+        avatar:
+          $ref: "#/components/schemas/UserAvatarChange"
+
+    UserAvatar:
+      type: string
+      maxLength: 20
+      pattern: "^[a-z]+(-[a-z]+)*$"
+      description: |
+        Imagen de perfil elegida, por el nombre de la ilustracion. Ausente o nula si nunca se
+        eligio: entonces el cliente pinta las iniciales. No es una foto sino una de las
+        ilustraciones que trae el cliente; la API no conoce el catalogo, y un nombre que el
+        cliente no sepa pintar se trata como si no hubiera ninguno.
+      example: fox
+
+    UserAvatarChange:
+      type: string
+      maxLength: 20
+      pattern: "^(initials|[a-zA-Z]+(-[a-zA-Z]+)*)$"
+      description: |
+        Imagen de perfil a fijar. Si no viene, se deja la que tuviera. `initials` la quita y
+        devuelve el perfil a las iniciales. Se guarda en minusculas.
+      example: llama
 
     AccountTokenRequest:
       type: object
@@ -1856,6 +1878,8 @@ components:
             contrasena, que es de lo que avisa la aplicacion.
         displayName:
           type: string
+        avatar:
+          $ref: "#/components/schemas/UserAvatar"
 
     TransactionTypeResponse:
       type: object

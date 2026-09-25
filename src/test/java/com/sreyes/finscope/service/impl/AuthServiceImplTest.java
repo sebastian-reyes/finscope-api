@@ -457,6 +457,54 @@ class AuthServiceImplTest {
   }
 
   @Test
+  @DisplayName("Guarda la imagen de perfil elegida, en minúsculas")
+  void updatesAvatar() {
+    User user = existingUser(passwordEncoder.encode(PASSWORD));
+    when(userRepository.findById(USER_ID)).thenReturn(Mono.just(user));
+    when(userRepository.save(any(User.class)))
+        .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+
+    StepVerifier.create(authService.updateUser(USER_ID, avatarRequest("Llama")))
+        .assertNext(updated -> {
+          assertEquals("llama", updated.getAvatar());
+          assertEquals("Sebastian", updated.getDisplayName());
+        })
+        .verifyComplete();
+
+    assertEquals("llama", user.getAvatar());
+  }
+
+  @Test
+  @DisplayName("Vuelve a las iniciales guardando la imagen como nula")
+  void clearsAvatarWithInitials() {
+    User user = existingUser(passwordEncoder.encode(PASSWORD));
+    user.setAvatar("fox");
+    when(userRepository.findById(USER_ID)).thenReturn(Mono.just(user));
+    when(userRepository.save(any(User.class)))
+        .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+
+    StepVerifier.create(authService.updateUser(USER_ID, avatarRequest("initials")))
+        .assertNext(updated -> assertNull(updated.getAvatar()))
+        .verifyComplete();
+
+    assertNull(user.getAvatar());
+  }
+
+  @Test
+  @DisplayName("Cambiar el nombre no toca la imagen de perfil")
+  void keepsAvatarWhenOnlyNameChanges() {
+    User user = existingUser(passwordEncoder.encode(PASSWORD));
+    user.setAvatar("owl");
+    when(userRepository.findById(USER_ID)).thenReturn(Mono.just(user));
+    when(userRepository.save(any(User.class)))
+        .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+
+    StepVerifier.create(authService.updateUser(USER_ID, updateRequest("Seba")))
+        .assertNext(updated -> assertEquals("owl", updated.getAvatar()))
+        .verifyComplete();
+  }
+
+  @Test
   @DisplayName("No deja cambiar los datos de un usuario que no existe")
   void rejectsUpdateOnUnknownUser() {
     when(userRepository.findById(anyLong())).thenReturn(Mono.empty());
@@ -477,6 +525,18 @@ class AuthServiceImplTest {
   private UpdateUserRequest updateRequest(String displayName) {
     UpdateUserRequest request = new UpdateUserRequest();
     request.setDisplayName(displayName);
+    return request;
+  }
+
+  /**
+   * Construye una petición que solo cambia la imagen de perfil.
+   *
+   * @param avatar imagen a fijar, o {@code initials} para quitarla
+   * @return la petición
+   */
+  private UpdateUserRequest avatarRequest(String avatar) {
+    UpdateUserRequest request = new UpdateUserRequest();
+    request.setAvatar(avatar);
     return request;
   }
 
@@ -529,7 +589,8 @@ class AuthServiceImplTest {
    * @return el usuario existente
    */
   private User existingUser(String passwordHash) {
-    return new User(USER_ID, EMAIL, passwordHash, false, "Sebastian", true, LocalDateTime.now());
+    return new User(USER_ID, EMAIL, passwordHash, false, "Sebastian", null, true,
+        LocalDateTime.now());
   }
 
   /**
