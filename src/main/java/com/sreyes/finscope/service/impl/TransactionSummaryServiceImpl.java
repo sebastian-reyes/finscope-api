@@ -66,8 +66,8 @@ public class TransactionSummaryServiceImpl implements TransactionSummaryService 
             transactionSummaryRepository.totalsByTag(userId, criteria, range).collectList(),
             transactionSummaryRepository
                 .totalsByCurrency(userId, criteria.withoutCurrency(), range).collectList()))
-        .map(totals -> buildSummary(totals.getT1(), totals.getT2(), totals.getT3(),
-            totals.getT4()));
+        .map(totals -> buildSummary(criteria, totals.getT1(), totals.getT2(),
+            totals.getT3(), totals.getT4()));
   }
 
   @Override
@@ -79,7 +79,12 @@ public class TransactionSummaryServiceImpl implements TransactionSummaryService 
         .flatMapMany(range -> transactionSummaryRepository.totalsByPeriod(userId, criteria, range,
             toBucketSize(requested)))
         .collectList()
-        .map(totals -> new SummarySeriesResponse(requested, buildBuckets(totals)));
+        .map(totals -> {
+          SummarySeriesResponse series =
+              new SummarySeriesResponse(requested, buildBuckets(totals));
+          series.setCurrency(currencyOf(criteria));
+          return series;
+        });
   }
 
   /**
@@ -99,20 +104,45 @@ public class TransactionSummaryServiceImpl implements TransactionSummaryService 
    * Ensambla el resumen del periodo a partir de los totales por tipo, categoría, tag y
    * moneda.
    *
+   * @param criteria   filtros solicitados, de donde sale la moneda de las cifras
    * @param byType     totales agrupados por tipo de transacción
    * @param byCategory totales agrupados por categoría y tipo de transacción
    * @param byTag      totales agrupados por tag y tipo de transacción
    * @param byCurrency totales agrupados por moneda y tipo de transacción
    * @return el resumen del periodo
    */
-  private TransactionSummaryResponse buildSummary(List<AmountTotal> byType,
+  private TransactionSummaryResponse buildSummary(TransactionSummaryCriteria criteria,
+                                                  List<AmountTotal> byType,
                                                   List<AmountTotal> byCategory,
                                                   List<AmountTotal> byTag,
                                                   List<AmountTotal> byCurrency) {
     Balance balance = Balance.of(byType);
-    return new TransactionSummaryResponse(balance.income(), balance.expense(), balance.net(),
-        balance.movements(), buildCurrencySummaries(byCurrency),
-        buildCategorySummaries(byCategory), buildTagSummaries(byTag));
+    TransactionSummaryResponse summary = new TransactionSummaryResponse(balance.income(),
+        balance.expense(), balance.net(), balance.movements(),
+        buildCurrencySummaries(byCurrency), buildCategorySummaries(byCategory),
+        buildTagSummaries(byTag));
+    Currency currency = currencyOf(criteria);
+    summary.setCurrency(currency);
+    if (criteria.converted() && !CurrencyRules.isBase(currency)) {
+      summary.setRate(criteria.conversionRate());
+    }
+    return summary;
+  }
+
+  /**
+   * La moneda en la que hablan las cifras del resumen: la de destino si se convirtió, la
+   * del filtro si se acotó, y la base si no se dijo ninguna.
+   *
+   * @param criteria filtros solicitados
+   * @return la moneda de los totales
+   */
+  private static Currency currencyOf(TransactionSummaryCriteria criteria) {
+    if (criteria.converted()) {
+      return Currency.fromValue(criteria.convertTo());
+    }
+    return criteria.currency() == null
+        ? CurrencyRules.BASE
+        : Currency.fromValue(criteria.currency());
   }
 
   /**

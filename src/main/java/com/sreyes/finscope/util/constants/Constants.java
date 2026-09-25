@@ -25,6 +25,8 @@ public final class Constants {
       "An exchange rate is required to register an amount in {}";
   public static final String EXCHANGE_RATE_NOT_APPLICABLE =
       "{} is the base currency, so it takes no exchange rate";
+  public static final String CONVERSION_RATE_REQUIRED =
+      "A reference exchange rate is required to convert the totals to {}";
 
   public static final String BUDGET_NOT_FOUND = "Budget not found with id: ";
   public static final String BUDGET_ALREADY_SET =

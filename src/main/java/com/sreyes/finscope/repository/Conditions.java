@@ -47,6 +47,19 @@ final class Conditions {
   }
 
   /**
+   * Enlaza un valor que no filtra, sino que usa otra parte de la consulta, como la
+   * conversión de los importes de un resumen.
+   *
+   * @param name  nombre del parámetro
+   * @param value valor a enlazar
+   * @return estas mismas condiciones, para poder encadenar
+   */
+  Conditions with(String name, Object value) {
+    bindings.put(name, value);
+    return this;
+  }
+
+  /**
    * Compone la cláusula WHERE combinando con AND todos los predicados acumulados.
    *
    * @return el texto de la cláusula, terminado en salto de línea

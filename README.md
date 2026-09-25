@@ -11,7 +11,7 @@ que se repiten.
 [![WebFlux](https://img.shields.io/badge/WebFlux-reactiva-6DB33F)](https://docs.spring.io/spring-framework/reference/web/webflux.html)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![R2DBC](https://img.shields.io/badge/R2DBC-sin%20bloqueo-4169E1)](https://r2dbc.io/)
-[![OpenAPI](https://img.shields.io/badge/OpenAPI-6.10.0-85EA2D?logo=openapiinitiative&logoColor=black)](src/main/resources/openapi/finscope-api.yaml)
+[![OpenAPI](https://img.shields.io/badge/OpenAPI-6.11.0-85EA2D?logo=openapiinitiative&logoColor=black)](src/main/resources/openapi/finscope-api.yaml)
 [![Tests](https://img.shields.io/badge/tests-312%20verdes-success)](#pruebas-y-ci)
 
 [Arquitectura](#arquitectura) · [La API](#la-api) · [Arrancar](#arrancar) ·
@@ -263,6 +263,11 @@ recorta la lista: contesta cuánto suma.
 | --- | --- | --- |
 | `GET` | `/transactions/summary` | Balance, ingresos, egresos y reparto por categoría o por tag |
 | `GET` | `/transactions/summary/series` | Lo mismo agrupado por tramos de tiempo, para la evolución |
+
+> Cada total es de **una sola moneda** salvo que se pida lo contrario con `convertTo`. A soles,
+> cada movimiento se convierte **con su propio tipo de cambio**, el que se guardó al
+> registrarlo, así que el resultado es exacto. A dólares, lo que está en soles se divide por un
+> tipo de referencia (`rate`) que manda el cliente, y la cifra es una aproximación.
 
 ### Presupuestos
 

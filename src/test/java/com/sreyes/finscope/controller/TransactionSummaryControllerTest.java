@@ -1,8 +1,10 @@
 package com.sreyes.finscope.controller;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.reactive.server.SecurityMockServerConfigurers.csrf;
@@ -145,6 +147,74 @@ class TransactionSummaryControllerTest {
         ArgumentCaptor.forClass(TransactionSummaryCriteria.class);
     verify(transactionSummaryService).summarize(eq(USER_ID), criteria.capture());
     assertEquals("USD", criteria.getValue().currency());
+  }
+
+  @Test
+  @DisplayName("Convierte a la base sin pedir tipo de referencia y deja de acotar por moneda")
+  void convertsToBaseWithoutReferenceRate() {
+    when(transactionSummaryService.summarize(eq(USER_ID), any(TransactionSummaryCriteria.class)))
+        .thenReturn(Mono.just(summary()));
+
+    webTestClient.get().uri("/transactions/summary?month=8&year=2026&convertTo=PEN")
+        .exchange()
+        .expectStatus().isOk();
+
+    ArgumentCaptor<TransactionSummaryCriteria> criteria =
+        ArgumentCaptor.forClass(TransactionSummaryCriteria.class);
+    verify(transactionSummaryService).summarize(eq(USER_ID), criteria.capture());
+    assertEquals("PEN", criteria.getValue().convertTo());
+    assertEquals(0, BigDecimal.ONE.compareTo(criteria.getValue().conversionRate()));
+    assertNull(criteria.getValue().currency());
+  }
+
+  @Test
+  @DisplayName("Convierte a otra moneda con el tipo de referencia que manda el cliente")
+  void convertsToForeignCurrencyWithReferenceRate() {
+    when(transactionSummaryService.summarize(eq(USER_ID), any(TransactionSummaryCriteria.class)))
+        .thenReturn(Mono.just(summary()));
+
+    webTestClient.get()
+        .uri("/transactions/summary?month=8&year=2026&convertTo=USD&rate=3.55&currency=PEN")
+        .exchange()
+        .expectStatus().isOk();
+
+    ArgumentCaptor<TransactionSummaryCriteria> criteria =
+        ArgumentCaptor.forClass(TransactionSummaryCriteria.class);
+    verify(transactionSummaryService).summarize(eq(USER_ID), criteria.capture());
+    assertEquals("USD", criteria.getValue().convertTo());
+    assertEquals(0, new BigDecimal("3.55").compareTo(criteria.getValue().conversionRate()));
+    assertNull(criteria.getValue().currency());
+  }
+
+  @Test
+  @DisplayName("No convierte a otra moneda sin tipo de referencia")
+  void rejectsForeignConversionWithoutRate() {
+    webTestClient.get().uri("/transactions/summary?month=8&year=2026&convertTo=USD")
+        .exchange()
+        .expectStatus().isBadRequest()
+        .expectBody()
+        .jsonPath("$.code").isEqualTo("EXCHANGE_RATE_REQUIRED");
+
+    verify(transactionSummaryService, never()).summarize(any(), any());
+  }
+
+  @Test
+  @DisplayName("La evolución se convierte igual que el resumen")
+  void convertsSeriesLikeTheSummary() {
+    when(transactionSummaryService.summarizeSeries(eq(USER_ID),
+        any(TransactionSummaryCriteria.class), any()))
+        .thenReturn(Mono.just(new SummarySeriesResponse(SummaryGranularity.MONTH, List.of())));
+
+    webTestClient.get()
+        .uri("/transactions/summary/series?year=2026&convertTo=USD&rate=3.7")
+        .exchange()
+        .expectStatus().isOk();
+
+    ArgumentCaptor<TransactionSummaryCriteria> criteria =
+        ArgumentCaptor.forClass(TransactionSummaryCriteria.class);
+    verify(transactionSummaryService).summarizeSeries(eq(USER_ID), criteria.capture(), any());
+    assertEquals("USD", criteria.getValue().convertTo());
+    assertEquals(0, new BigDecimal("3.7").compareTo(criteria.getValue().conversionRate()));
   }
 
   @Test

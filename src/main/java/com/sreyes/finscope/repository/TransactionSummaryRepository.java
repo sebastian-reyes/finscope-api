@@ -55,6 +55,19 @@ public class TransactionSummaryRepository {
       LEFT JOIN tags g ON g.id_tag = xt.tag_id
       """;
 
+  /**
+   * Importe de cada movimiento llevado a la moneda pedida.
+   *
+   * <p>El que ya está en ella entra tal cual. El resto pasa primero a la base con su propio
+   * tipo de cambio —el que se guardó al registrarlo, que en la base es nulo y vale uno— y
+   * después se divide por el tipo de referencia, que es uno cuando la moneda pedida es la
+   * base. Así la conversión a soles es exacta, movimiento a movimiento, y solo la conversión
+   * a otra moneda depende del cambio que indique el cliente.</p>
+   */
+  private static final String CONVERTED_AMOUNT = """
+      CASE WHEN t.currency = :convertTo THEN t.amount
+           ELSE t.amount * COALESCE(t.exchange_rate, 1) / :conversionRate END""";
+
   private final DatabaseClient databaseClient;
 
   /**
@@ -70,9 +83,9 @@ public class TransactionSummaryRepository {
     Conditions conditions = buildConditions(userId, criteria, range);
     String sql = """
         SELECT tt.code AS type_code,
-               COALESCE(SUM(t.amount), 0) AS total,
+               COALESCE(SUM(%s), 0) AS total,
                COUNT(*) AS movements
-        """ + FROM_TRANSACTIONS + conditions.sql() + """
+        """.formatted(amount(criteria)) + FROM_TRANSACTIONS + conditions.sql() + """
         GROUP BY tt.code
         """;
     return execute(sql, conditions, row -> toTotal(row, null, null, null, null, null));
@@ -128,9 +141,10 @@ public class TransactionSummaryRepository {
         SELECT c.id_category AS category_id,
                c.name_category AS category_name,
                tt.code AS type_code,
-               COALESCE(SUM(t.amount), 0) AS total,
+               COALESCE(SUM(%s), 0) AS total,
                COUNT(*) AS movements
-        """ + FROM_TRANSACTIONS + JOIN_CATEGORIES + conditions.sql() + """
+        """.formatted(amount(criteria))
+            + FROM_TRANSACTIONS + JOIN_CATEGORIES + conditions.sql() + """
         GROUP BY c.id_category, c.name_category, tt.code
         """;
     return execute(sql, conditions, row -> toTotal(row, null,
@@ -157,9 +171,9 @@ public class TransactionSummaryRepository {
     String sql = """
         SELECT g.name_tag AS tag_name,
                tt.code AS type_code,
-               COALESCE(SUM(t.amount), 0) AS total,
+               COALESCE(SUM(%s), 0) AS total,
                COUNT(*) AS movements
-        """ + FROM_TRANSACTIONS + JOIN_TAGS + conditions.sql() + """
+        """.formatted(amount(criteria)) + FROM_TRANSACTIONS + JOIN_TAGS + conditions.sql() + """
         GROUP BY g.name_tag, tt.code
         """;
     return execute(sql, conditions,
@@ -185,15 +199,28 @@ public class TransactionSummaryRepository {
     String sql = """
         SELECT DATE_TRUNC('%s', t.date) AS period_start,
                tt.code AS type_code,
-               COALESCE(SUM(t.amount), 0) AS total,
+               COALESCE(SUM(%s), 0) AS total,
                COUNT(*) AS movements
-        """.formatted(bucketSize.sqlUnit()) + FROM_TRANSACTIONS + conditions.sql() + """
+        """.formatted(bucketSize.sqlUnit(), amount(criteria))
+            + FROM_TRANSACTIONS + conditions.sql() + """
         GROUP BY period_start, tt.code
         ORDER BY period_start
         """;
     return execute(sql, conditions,
         row -> toTotal(row, null, null, null, null,
             row.get("period_start", LocalDateTime.class)));
+  }
+
+  /**
+   * Lo que se suma de cada movimiento: su importe, o su importe convertido si se pidió
+   * sumar todas las monedas juntas. Es un texto fijo y no depende de la petición: los
+   * valores de la conversión viajan enlazados.
+   *
+   * @param criteria filtros solicitados
+   * @return la expresión SQL del importe
+   */
+  private static String amount(TransactionSummaryCriteria criteria) {
+    return criteria.converted() ? CONVERTED_AMOUNT : "t.amount";
   }
 
   /**
@@ -248,6 +275,11 @@ public class TransactionSummaryRepository {
   private Conditions buildConditions(Long userId, TransactionSummaryCriteria criteria,
                                      DateRange range) {
     Conditions conditions = new Conditions().add("t.user_id = :userId", "userId", userId);
+
+    if (criteria.converted()) {
+      conditions.with("convertTo", criteria.convertTo())
+          .with("conversionRate", criteria.conversionRate());
+    }
 
     if (range.from() != null) {
       conditions.add("t.date >= :dateFrom", "dateFrom", range.from());

@@ -76,4 +76,29 @@ public final class CurrencyRules {
           Constants.EXCHANGE_RATE_REQUIRED.replace("{}", currency.getValue()));
     }
   }
+
+  /**
+   * Resuelve el tipo de referencia con el que se convierten los totales de un resumen.
+   *
+   * <p>A la moneda base no hace falta ninguno: cada movimiento se convierte con el suyo, el
+   * que se guardó al registrarlo, y el de referencia vale uno. A otra moneda sí, porque un
+   * movimiento en la base no tiene un cambio propio hacia ella; sin él, el total no se
+   * podría calcular.</p>
+   *
+   * @param target moneda a la que se convierte
+   * @param rate   tipo de referencia recibido, puede ser nulo
+   * @return el tipo con el que dividir lo que se ha llevado a la base
+   * @throws ExchangeRateRequiredException si se convierte a otra moneda sin tipo de
+   *                                       referencia
+   */
+  public static BigDecimal conversionRate(Currency target, BigDecimal rate) {
+    if (isBase(target)) {
+      return BigDecimal.ONE;
+    }
+    if (rate == null) {
+      throw new ExchangeRateRequiredException(
+          Constants.CONVERSION_RATE_REQUIRED.replace("{}", target.getValue()));
+    }
+    return rate;
+  }
 }

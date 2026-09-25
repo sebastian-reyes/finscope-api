@@ -40,8 +40,10 @@ info:
     Cada transaccion lleva su propia moneda y se guarda en ella, sin convertirse nunca:
     cien dolares son cien dolares el dia que se registran y el dia que se consultan. Las
     transacciones en una moneda distinta de la base guardan ademas el tipo de cambio con
-    el que se apuntaron, que es memoria de aquel dia y no participa en ningun calculo. Por
-    eso los totales no suman monedas distintas: las separan.
+    el que se apuntaron, que es memoria de aquel dia. Por eso los totales no suman monedas
+    distintas: las separan. La unica excepcion la pide el cliente de forma explicita, con
+    convertTo en los resumenes: entonces cada movimiento se lleva a la moneda base con su
+    propio tipo de cambio, que es lo que de verdad costo aquel dia, y no con uno de hoy.
 
     Los avisos al telefono usan Web Push. El navegador entrega una suscripcion al
     activarlos y a partir de ahi es la API quien decide cuando avisar: cada hora mira que
@@ -51,7 +53,7 @@ info:
     Todos los recursos financieros pertenecen al usuario autenticado y estan aislados
     entre usuarios. Salvo los endpoints de autenticacion, todas las operaciones exigen
     un token de acceso.
-  version: 6.10.0
+  version: 6.11.0
 servers:
   - url: /
     description: Servidor local
@@ -779,10 +781,13 @@ paths:
         importe integro a cada uno, porque el modelo no define como repartirlo. El cliente
         debe presentarlo como gasto por tag y no como un reparto porcentual del total.
 
-        Ningun total mezcla monedas. Los de primer nivel y los dos desgloses son los de una
-        sola: la del parametro currency, o la moneda base si no se indica. Para ver todas
-        las del periodo a la vez esta byCurrency, que es lo unico que no acota ese
-        parametro.
+        Ningun total mezcla monedas sin que se pida. Los de primer nivel y los dos desgloses
+        son los de una sola: la del parametro currency, o la moneda base si no se indica.
+        Para ver todas las del periodo a la vez esta byCurrency, que es lo unico que no
+        acota ese parametro.
+
+        Con convertTo, en cambio, los totales y los desgloses suman todas las monedas del
+        periodo llevadas a la indicada, y currency deja de acotar. Ver convertTo.
       operationId: getTransactionSummary
       parameters:
         - $ref: "#/components/parameters/MonthFilter"
@@ -794,6 +799,8 @@ paths:
         - $ref: "#/components/parameters/TagFilter"
         - $ref: "#/components/parameters/SearchFilter"
         - $ref: "#/components/parameters/SummaryCurrencyFilter"
+        - $ref: "#/components/parameters/SummaryConvertTo"
+        - $ref: "#/components/parameters/SummaryConversionRate"
       responses:
         "200":
           description: Resumen del periodo
@@ -822,6 +829,7 @@ paths:
 
         Los tramos son de una sola moneda, la del parametro currency o la base si no se
         indica: una linea que sumara monedas distintas no representaria ninguna cantidad.
+        Con convertTo suman todas, convertidas igual que en el resumen.
       operationId: getTransactionSummarySeries
       parameters:
         - $ref: "#/components/parameters/MonthFilter"
@@ -833,6 +841,8 @@ paths:
         - $ref: "#/components/parameters/TagFilter"
         - $ref: "#/components/parameters/SearchFilter"
         - $ref: "#/components/parameters/SummaryCurrencyFilter"
+        - $ref: "#/components/parameters/SummaryConvertTo"
+        - $ref: "#/components/parameters/SummaryConversionRate"
         - name: granularity
           in: query
           description: Tamanio de cada tramo
@@ -1635,6 +1645,41 @@ components:
           - $ref: "#/components/schemas/Currency"
         default: PEN
 
+    SummaryConvertTo:
+      name: convertTo
+      in: query
+      description: |
+        Moneda a la que llevar todos los importes para sumarlos juntos. Sin el, cada total es
+        de una sola moneda y no se convierte nada.
+
+        A la moneda base, cada movimiento se convierte con su propio tipo de cambio, el que
+        se guardo al registrarlo: es lo que de verdad costo aquel dia, asi que el resultado
+        es exacto y no depende del cambio de hoy.
+
+        A otra moneda, los movimientos que ya estan en ella se suman tal cual y el resto se
+        lleva primero a la base y despues se divide por rate. Un movimiento en soles no
+        tiene un cambio propio a dolares, asi que ese total es necesariamente una
+        aproximacion al tipo de referencia que indique el cliente.
+
+        Con convertTo el filtro currency deja de acotar. byCurrency no se ve afectado: sigue
+        trayendo cada moneda con sus importes sin convertir.
+      required: false
+      schema:
+        $ref: "#/components/schemas/Currency"
+
+    SummaryConversionRate:
+      name: rate
+      in: query
+      description: |
+        Tipo de cambio de referencia de convertTo a la moneda base: cuantas unidades de la
+        base vale una de convertTo, por ejemplo 3.55 soles por dolar. Obligatorio cuando
+        convertTo no es la base, e ignorado cuando lo es.
+      required: false
+      schema:
+        type: number
+        minimum: 0.000001
+        maximum: 999999.999999
+
     SearchFilter:
       name: search
       in: query
@@ -2039,9 +2084,9 @@ components:
           description: |
             Tipo de cambio a moneda base con el que se registro el movimiento. Nulo cuando
             la moneda ya es la base.
-            Es memoria de aquel dia y no participa en ningun total: cambiarlo manana no
-            cambia lo que costo la compra. Multiplicado por amount da su equivalente en
-            moneda base en el momento del registro.
+            Es memoria de aquel dia: cambiarlo manana no cambia lo que costo la compra.
+            Multiplicado por amount da su equivalente en moneda base en el momento del
+            registro, y es justo lo que usan los resumenes cuando se piden convertidos.
         description:
           type: string
         date:
@@ -2229,11 +2274,20 @@ components:
       type: object
       description: |
         Totales del periodo y sus desgloses por moneda, por categoria y por tag.
-        Todos los importes de un mismo nivel hablan de la misma moneda: la del filtro
-        currency, o la base si no se indico. La excepcion es byCurrency, que es donde estan
-        todas.
+        Todos los importes de un mismo nivel hablan de la misma moneda, la que dice currency:
+        la del filtro, la base si no se indico, o la de convertTo si se pidio convertir. La
+        excepcion es byCurrency, que es donde estan todas y sin convertir.
       required: [income, expense, net, transactionCount, byCurrency, byCategory, byTag]
       properties:
+        currency:
+          $ref: "#/components/schemas/Currency"
+        rate:
+          type: number
+          nullable: true
+          description: |
+            Tipo de cambio de referencia con el que se convirtio a una moneda que no es la
+            base. Nulo si no se convirtio o si se convirtio a la base, donde cada movimiento
+            usa el suyo.
         income:
           type: number
           description: Suma de los importes de tipo INCOME, siempre positiva
@@ -2321,6 +2375,8 @@ components:
       description: Evolucion de ingresos y egresos a lo largo del periodo
       required: [granularity, buckets]
       properties:
+        currency:
+          $ref: "#/components/schemas/Currency"
         granularity:
           $ref: "#/components/schemas/SummaryGranularity"
         buckets:

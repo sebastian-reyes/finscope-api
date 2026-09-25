@@ -1,6 +1,8 @@
 package com.sreyes.finscope.service.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
@@ -225,6 +227,73 @@ class TransactionSummaryServiceImplTest {
     verify(transactionSummaryRepository).totalsByCategory(eq(USER_ID), captor.capture(),
         any(DateRange.class));
     assertEquals("PEN", captor.getValue().currency());
+  }
+
+  @Test
+  @DisplayName("Dice en qué moneda vienen las cifras cuando no se convierte")
+  void reportsTheCurrencyOfUnconvertedFigures() {
+    givenTheThreeExpenses();
+    TransactionSummaryCriteria scoped = new TransactionSummaryCriteria(null, null, null, null,
+        null, null, null, null, "USD");
+
+    StepVerifier.create(transactionSummaryService.summarize(USER_ID, scoped))
+        .assertNext(summary -> {
+          assertEquals(Currency.USD, summary.getCurrency());
+          assertNull(summary.getRate());
+        })
+        .verifyComplete();
+  }
+
+  @Test
+  @DisplayName("Convertido a otra moneda, devuelve también el tipo de referencia usado")
+  void reportsTheReferenceRateOfAForeignConversion() {
+    givenTheThreeExpenses();
+    TransactionSummaryCriteria converted = new TransactionSummaryCriteria(null, null, null,
+        null, null, null, null, null, null, "USD", new BigDecimal("3.55"));
+
+    StepVerifier.create(transactionSummaryService.summarize(USER_ID, converted))
+        .assertNext(summary -> {
+          assertEquals(Currency.USD, summary.getCurrency());
+          assertEquals(new BigDecimal("3.55"), summary.getRate());
+        })
+        .verifyComplete();
+  }
+
+  @Test
+  @DisplayName("Convertido a la base, no hay tipo de referencia: cada movimiento usa el suyo")
+  void omitsTheRateWhenConvertingToTheBase() {
+    givenTheThreeExpenses();
+    TransactionSummaryCriteria converted = new TransactionSummaryCriteria(null, null, null,
+        null, null, null, null, null, null, "PEN", BigDecimal.ONE);
+
+    StepVerifier.create(transactionSummaryService.summarize(USER_ID, converted))
+        .assertNext(summary -> {
+          assertEquals(Currency.PEN, summary.getCurrency());
+          assertNull(summary.getRate());
+        })
+        .verifyComplete();
+  }
+
+  @Test
+  @DisplayName("El desglose por moneda sigue sin convertir aunque se pida convertir")
+  void currencyBreakdownIsNeverConverted() {
+    givenTheThreeExpenses();
+    TransactionSummaryCriteria converted = new TransactionSummaryCriteria(null, null, null,
+        null, null, null, null, null, null, "PEN", BigDecimal.ONE);
+
+    StepVerifier.create(transactionSummaryService.summarize(USER_ID, converted))
+        .expectNextCount(1)
+        .verifyComplete();
+
+    ArgumentCaptor<TransactionSummaryCriteria> captor =
+        ArgumentCaptor.forClass(TransactionSummaryCriteria.class);
+    verify(transactionSummaryRepository).totalsByCurrency(eq(USER_ID), captor.capture(),
+        any(DateRange.class));
+    assertFalse(captor.getValue().converted());
+
+    verify(transactionSummaryRepository).totalsByCategory(eq(USER_ID), captor.capture(),
+        any(DateRange.class));
+    assertTrue(captor.getValue().converted());
   }
 
   @Test
