@@ -15,10 +15,17 @@
     <description>finscope-api</description>
     <url/>
     <licenses>
-        <license/>
+        <license>
+            <name>MIT License</name>
+            <url>https://opensource.org/licenses/MIT</url>
+        </license>
     </licenses>
     <developers>
-        <developer/>
+        <developer>
+            <id>sebastian-reyes</id>
+            <name>Sebastián Reyes</name>
+            <url>https://github.com/sebastian-reyes</url>
+        </developer>
     </developers>
     <scm>
         <connection/>
