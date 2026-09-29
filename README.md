@@ -656,4 +656,6 @@ nunca copiada. Dos copias acaban discrepando sin que nadie sepa cuál miente.
 **FinScope** · [fin-scope.app](https://fin-scope.app) ·
 [finscope-web](https://github.com/sebastian-reyes/finscope-web)
 
+© Sebastián Reyes · [Licencia MIT](LICENSE)
+
 </div>
