@@ -58,6 +58,9 @@ management:
       probes:
         enabled: true
 finscope:
+  # Zona horaria de los usuarios. Fija la hora con la que se registra lo que la API fecha
+  # sola (como un fijo pagado) y decide que dia es «hoy»; el contenedor corre en UTC.
+  zone: ${APP_ZONE:America/Lima}
   security:
     jwt:
       issuer: ${JWT_ISSUER:finscope-api}
