@@ -40,8 +40,7 @@ jobs:
       # `-B` quita las barras de progreso, que en un log sin terminal solo son ruido, y `-ntp`
       # las líneas de descarga.
       #
-      # No hace falta base de datos: las pruebas son unitarias y de controller con el
-      # repositorio simulado. El día que entren pruebas con Testcontainers sobre Postgres, el
-      # runner ya trae Docker y este mismo paso las ejecutará sin cambios.
+      # Las pruebas de repositorio levantan su propio PostgreSQL con Testcontainers. El runner
+      # de Ubuntu ya trae Docker, así que no hace falta declarar ningún servicio aquí.
       - name: Compilar y probar
         run: ./mvnw -B -ntp verify

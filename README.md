@@ -12,7 +12,7 @@ que se repiten.
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![R2DBC](https://img.shields.io/badge/R2DBC-sin%20bloqueo-4169E1)](https://r2dbc.io/)
 [![OpenAPI](https://img.shields.io/badge/OpenAPI-6.11.0-85EA2D?logo=openapiinitiative&logoColor=black)](src/main/resources/openapi/finscope-api.yaml)
-[![Tests](https://img.shields.io/badge/tests-312%20verdes-success)](#pruebas-y-ci)
+[![Tests](https://img.shields.io/badge/tests-349%20verdes-success)](#pruebas-y-ci)
 
 [Arquitectura](#arquitectura) · [La API](#la-api) · [Arrancar](#arrancar) ·
 [Variables](#variables-de-entorno) · [Despliegue](#despliegue) ·
@@ -575,7 +575,7 @@ La lista completa está en [`.env.example`](.env.example).
 ## Pruebas y CI
 
 ```bash
-./mvnw verify          # genera desde el contrato, compila y ejecuta las 312 pruebas
+./mvnw verify          # genera desde el contrato, compila y ejecuta las 349 pruebas
 ./mvnw test            # solo las pruebas
 ```
 
@@ -584,8 +584,17 @@ construye las interfaces de los controladores a partir del contrato. Es lo que c
 discrepancia entre el contrato y la implementación en un **fallo de compilación aquí**, en
 lugar de en un 404 en el navegador.
 
-No hace falta base de datos: son pruebas unitarias y de controlador con el repositorio
-simulado.
+Casi todas son unitarias y de controlador, con el repositorio simulado. Las de
+`src/test/java/.../repository` no: ejecutan el SQL escrito a mano contra un **PostgreSQL de
+verdad** que Testcontainers levanta en Docker, con el esquema que crean las migraciones de
+Flyway. Hacen falta porque es donde están los fallos que no avisan —una proyección que sale
+entera a nulo, una suma que se duplica, un límite de fechas que se corre— y que las pruebas con
+el repositorio simulado no pueden ver.
+
+> [!IMPORTANT]
+> **Necesitan Docker en marcha.** Sin él, esas cuatro clases fallan al arrancar el contenedor. Corren
+> con el perfil `repository-test` y comprueban antes de cada prueba que están conectadas a la base
+> del contenedor: nunca tocan el PostgreSQL de la máquina.
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) las ejecuta en cada empujón a `master`
 y en cada pull request, que son los dos momentos en los que todavía es barato enterarse de que

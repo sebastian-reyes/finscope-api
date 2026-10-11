@@ -20,7 +20,6 @@ import com.sreyes.finscope.repository.BudgetRepository;
 import com.sreyes.finscope.repository.CategoryRepository;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -53,9 +52,13 @@ class BudgetServiceImplTest {
   /** Primer instante de agosto de 2026, como lo resuelve el filtro de mes del listado. */
   private static final LocalDateTime PERIOD_START = LocalDateTime.of(2026, 8, 1, 0, 0);
 
-  /** Último instante del mismo mes: el rango de la API es inclusivo por los dos extremos. */
+  /**
+   * Último instante del mismo mes: el rango de la API es inclusivo por los dos extremos.
+   * Llega a los microsegundos y no a los nanosegundos, que PostgreSQL redondearía al día
+   * siguiente.
+   */
   private static final LocalDateTime PERIOD_END =
-      LocalDateTime.of(2026, 8, 31, 0, 0).with(LocalTime.MAX);
+      LocalDateTime.of(2026, 8, 31, 23, 59, 59, 999_999_000);
 
   @Mock
   private BudgetRepository budgetRepository;

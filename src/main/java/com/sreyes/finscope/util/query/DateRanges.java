@@ -6,6 +6,7 @@ import com.sreyes.finscope.util.constants.Constants;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.YearMonth;
+import java.time.temporal.ChronoUnit;
 import lombok.experimental.UtilityClass;
 
 /**
@@ -17,6 +18,23 @@ import lombok.experimental.UtilityClass;
  */
 @UtilityClass
 public final class DateRanges {
+
+  /**
+   * Último instante de un día que PostgreSQL sabe guardar.
+   *
+   * <p>No es {@link LocalTime#MAX}: ese llega a los nanosegundos, y una columna
+   * {@code timestamp} solo guarda microsegundos. Al recibir 23:59:59.999999999 PostgreSQL lo
+   * redondea, y el redondeo cae en las 00:00:00 del día siguiente. Con ese extremo, el rango
+   * de agosto terminaba en el 1 de septiembre a medianoche, y como el rango es inclusivo,
+   * un movimiento fechado justo entonces contaba en los dos meses.</p>
+   *
+   * <p>No es un caso raro: confirmar un fijo fecha el movimiento al inicio de su día, así que
+   * el alquiler que vence el día 1 caía exactamente ahí. Se sumaba a lo gastado del
+   * presupuesto del mes anterior y dejaba el fijo de ese mes como pagado con el movimiento
+   * del siguiente. Lo descubrió {@code BudgetRepositoryTest}, la primera prueba que ejecuta
+   * estas consultas contra PostgreSQL.</p>
+   */
+  static final LocalTime END_OF_DAY = LocalTime.MAX.truncatedTo(ChronoUnit.MICROS);
 
   /**
    * Resuelve el rango de fechas efectivo a partir de los filtros recibidos.
@@ -62,6 +80,6 @@ public final class DateRanges {
     }
     YearMonth yearMonth = YearMonth.of(year, month);
     return new DateRange(yearMonth.atDay(1).atStartOfDay(),
-        yearMonth.atEndOfMonth().atTime(LocalTime.MAX));
+        yearMonth.atEndOfMonth().atTime(END_OF_DAY));
   }
 }
