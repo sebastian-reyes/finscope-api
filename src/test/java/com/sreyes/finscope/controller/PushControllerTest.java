@@ -121,8 +121,8 @@ class PushControllerTest {
   @Test
   @DisplayName("Cambia solo la preferencia que llega")
   void updatesPreferences() {
-    when(pushService.updateSettings(USER_ID, null, false))
-        .thenReturn(Mono.just(new NotificationSettings(true, false)));
+    when(pushService.updateSettings(USER_ID, null, false, null))
+        .thenReturn(Mono.just(new NotificationSettings(true, false, true)));
 
     webTestClient.patch().uri("/push/preferences")
         .bodyValue(Map.of("budgetLimit", false))
@@ -130,7 +130,23 @@ class PushControllerTest {
         .expectStatus().isOk()
         .expectBody()
         .jsonPath("$.recurringDue").isEqualTo(true)
-        .jsonPath("$.budgetLimit").isEqualTo(false);
+        .jsonPath("$.budgetLimit").isEqualTo(false)
+        .jsonPath("$.loanDue").isEqualTo(true);
+  }
+
+  @Test
+  @DisplayName("Apaga los avisos de préstamos sin tocar los demás")
+  void updatesLoanPreference() {
+    when(pushService.updateSettings(USER_ID, null, null, false))
+        .thenReturn(Mono.just(new NotificationSettings(true, true, false)));
+
+    webTestClient.patch().uri("/push/preferences")
+        .bodyValue(Map.of("loanDue", false))
+        .exchange()
+        .expectStatus().isOk()
+        .expectBody()
+        .jsonPath("$.loanDue").isEqualTo(false)
+        .jsonPath("$.recurringDue").isEqualTo(true);
   }
 
   @Test

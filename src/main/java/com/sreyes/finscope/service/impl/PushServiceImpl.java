@@ -77,8 +77,8 @@ public class PushServiceImpl implements PushService {
 
   @Override
   public Mono<NotificationSettings> updateSettings(Long userId, Boolean recurringDue,
-                                                   Boolean budgetLimit) {
-    return notificationRepository.saveSettings(userId, recurringDue, budgetLimit);
+                                                   Boolean budgetLimit, Boolean loanDue) {
+    return notificationRepository.saveSettings(userId, recurringDue, budgetLimit, loanDue);
   }
 
   @Override

@@ -34,6 +34,7 @@ que se repiten.
   - [Resúmenes](#resúmenes)
   - [Presupuestos](#presupuestos)
   - [Movimientos fijos](#movimientos-fijos)
+  - [Préstamos](#préstamos)
   - [Avisos al teléfono](#avisos-al-teléfono)
   - [Errores](#errores)
 - [Seguridad](#seguridad)
@@ -307,6 +308,30 @@ El ritmo va en **meses anclados a un mes de inicio**, en lugar de un enum de fre
 se queda corto en cuanto alguien cobra cada dos meses. El día se recorta al mes: un fijo del
 31 vence el 28 en febrero.
 
+### Préstamos
+
+| Método | Ruta | Qué hace |
+| --- | --- | --- |
+| `GET` | `/loans` | Todos, **con lo devuelto, lo que falta y el estado de hoy**; lo vencido primero |
+| `POST` | `/loans` | Registra uno con su plan de cuotas |
+| `GET` | `/loans/{id}` | Uno solo |
+| `PATCH` | `/loans/{id}` | Lo modifica; con `closed` lo da por cerrado o lo reabre |
+| `DELETE` | `/loans/{id}` | Lo borra con su plan y sus pagos |
+| `POST` | `/loans/{id}/payments` | Registra lo que el deudor devolvió |
+| `DELETE` | `/loans/{id}/payments/{paymentId}` | Quita un pago apuntado por error |
+
+**Un préstamo no es un movimiento.** Prestar no es gastar ni cobrar es ingresar, así que no
+escribe ninguna transacción y no altera el análisis. El interés, si lo hay, es **un monto
+fijo** y no una tasa: entre personas se acuerda «me devuelves 1100». Cero es un préstamo sin
+interés.
+
+El plan es una lista de cuotas que suma capital más interés; devolver de una vez es una sola
+cuota. **Los pagos no se atan a una cuota**: se aplican en orden a la más antigua pendiente,
+así que un pago parcial o uno adelantado se registran igual. Lo que cubre cada cuota y el
+estado se calculan al leer en
+[`util/rules/LoanRules`](src/main/java/com/sreyes/finscope/util/rules/LoanRules.java), y la
+consulta de avisos repite la misma regla en SQL.
+
 ### Avisos al teléfono
 
 | Método | Ruta | Qué hace |
@@ -319,12 +344,13 @@ se queda corto en cuanto alguien cobra cada dos meses. El día se recorta al mes
 | `POST` | `/push/test` | Manda un aviso de prueba y dice a cuántos dispositivos llegó |
 
 Los avisos llegan **aunque la aplicación esté cerrada**. No los pide nadie: una tarea de la
-propia API corre en el minuto 5 de cada hora y avisa de dos cosas.
+propia API corre en el minuto 5 de cada hora y avisa de tres cosas.
 
 | Aviso | Cuándo |
 | --- | --- |
 | **Fijo por vencer** | El día antes y el mismo día, si sigue pendiente (ni confirmado ni omitido) |
 | **Presupuesto al límite** | Al llegar al 90 % de lo presupuestado y al pasarse. Si salta de golpe por encima, solo el segundo |
+| **Cuota de préstamo por cobrar** | Una vez en los tres días previos, el mismo día y, si sigue sin cubrirse, al día siguiente. Los préstamos cerrados no avisan |
 
 <details>
 <summary><strong>Cómo funciona, y por qué no se repite ni sale de madrugada</strong></summary>
@@ -378,11 +404,11 @@ estado HTTP:
 
 | Estado | Códigos |
 | --- | --- |
-| `400` | `INVALID_DATE_FILTER`, `INVALID_SORT`, `CATEGORY_NOT_APPLICABLE`, `EXCHANGE_RATE_REQUIRED`, `EXCHANGE_RATE_NOT_APPLICABLE`, `RECURRING_DATE_OUT_OF_PERIOD`, `RECURRING_NOT_DUE`, `PUSH_ENDPOINT_NOT_ALLOWED` |
+| `400` | `INVALID_DATE_FILTER`, `INVALID_SORT`, `CATEGORY_NOT_APPLICABLE`, `EXCHANGE_RATE_REQUIRED`, `EXCHANGE_RATE_NOT_APPLICABLE`, `RECURRING_DATE_OUT_OF_PERIOD`, `RECURRING_NOT_DUE`, `PUSH_ENDPOINT_NOT_ALLOWED`, `INVALID_LOAN_PLAN` |
 | `401` | `UNAUTHENTICATED`, `INVALID_CREDENTIALS`, `INVALID_REFRESH_TOKEN`, `INVALID_ACCOUNT_TOKEN` |
 | `403` | `SYSTEM_CATEGORY_PROTECTED` |
-| `404` | `TRANSACTION_NOT_FOUND`, `TRANSACTION_TYPE_NOT_FOUND`, `CATEGORY_NOT_FOUND`, `TAG_NOT_FOUND`, `BUDGET_NOT_FOUND`, `RECURRING_NOT_FOUND` |
-| `409` | `EMAIL_ALREADY_REGISTERED`, `CATEGORY_NAME_ALREADY_USED`, `TAG_NAME_ALREADY_USED`, `BUDGET_ALREADY_SET`, `RECURRING_ALREADY_CONFIRMED`, `RECURRING_SKIPPED` |
+| `404` | `TRANSACTION_NOT_FOUND`, `TRANSACTION_TYPE_NOT_FOUND`, `CATEGORY_NOT_FOUND`, `TAG_NOT_FOUND`, `BUDGET_NOT_FOUND`, `RECURRING_NOT_FOUND`, `LOAN_NOT_FOUND`, `LOAN_PAYMENT_NOT_FOUND` |
+| `409` | `EMAIL_ALREADY_REGISTERED`, `CATEGORY_NAME_ALREADY_USED`, `TAG_NAME_ALREADY_USED`, `BUDGET_ALREADY_SET`, `RECURRING_ALREADY_CONFIRMED`, `RECURRING_SKIPPED`, `LOAN_OVERPAYMENT` |
 | `429` | `TOO_MANY_ATTEMPTS` |
 | `503` | `PUSH_NOT_CONFIGURED` |
 
@@ -434,6 +460,9 @@ Dieciséis tablas, todas colgando del usuario.
 | `recurring_transactions` | La plantilla del fijo, con su ritmo y su ancla |
 | `recurring_tags` | Los tags que hereda el movimiento que confirma un fijo |
 | `recurring_skips` | Los meses omitidos de cada fijo |
+| `loans` | Dinero prestado: a quién, cuánto, el interés fijo y si se dio por cerrado |
+| `loan_installments` | El plan de devolución de cada préstamo |
+| `loan_payments` | Lo que cada deudor fue devolviendo |
 | `push_subscriptions` | Los dispositivos suscritos a los avisos; la dirección es única y manda sobre el usuario |
 | `notification_preferences` | Qué avisos quiere cada cuenta. Sin fila, todos encendidos |
 | `notification_log` | Qué se avisó ya, para que ningún aviso se repita |

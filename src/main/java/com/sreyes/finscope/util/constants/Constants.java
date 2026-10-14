@@ -41,6 +41,18 @@ public final class Constants {
       "{} is skipped for that month. Undo the skip before confirming it";
   public static final String RECURRING_NOT_DUE =
       "{} is not due on that month, so there is nothing to confirm or to skip";
+  public static final String LOAN_NOT_FOUND = "Loan not found with id: ";
+  public static final String LOAN_PAYMENT_NOT_FOUND = "Loan payment not found with id: ";
+  public static final String LOAN_PLAN_TOTAL_MISMATCH =
+      "The installments add up to {} but the loan has to return {}";
+  public static final String LOAN_PLAN_REQUIRED =
+      "Changing the principal or the interest requires sending the new installment plan";
+  public static final String LOAN_INSTALLMENT_BEFORE_LENT_ON =
+      "No installment can be due before the day the money was lent";
+  public static final String LOAN_TOTAL_BELOW_PAID =
+      "The loan cannot return less than the {} already paid back";
+  public static final String LOAN_OVERPAYMENT =
+      "The payment exceeds the {} still owed on this loan";
   public static final String PUSH_NOT_CONFIGURED =
       "Push notifications are not configured on this server";
   public static final String PUSH_ENDPOINT_NOT_ALLOWED =

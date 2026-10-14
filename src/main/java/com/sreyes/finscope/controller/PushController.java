@@ -74,7 +74,8 @@ public class PushController implements PushApi {
     return authenticatedUser.currentUserId()
         .zipWith(request)
         .flatMap(tuple -> pushService.updateSettings(tuple.getT1(),
-            tuple.getT2().getRecurringDue(), tuple.getT2().getBudgetLimit()))
+            tuple.getT2().getRecurringDue(), tuple.getT2().getBudgetLimit(),
+            tuple.getT2().getLoanDue()))
         .map(settings -> ResponseEntity.ok(toResponse(settings)));
   }
 
@@ -87,6 +88,7 @@ public class PushController implements PushApi {
   }
 
   private static NotificationPreferencesResponse toResponse(NotificationSettings settings) {
-    return new NotificationPreferencesResponse(settings.recurringDue(), settings.budgetLimit());
+    return new NotificationPreferencesResponse(settings.recurringDue(), settings.budgetLimit(),
+        settings.loanDue());
   }
 }

@@ -12,6 +12,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.sreyes.finscope.model.query.BudgetLimitNotice;
+import com.sreyes.finscope.model.query.DueLoanNotice;
 import com.sreyes.finscope.model.query.DueRecurringNotice;
 import com.sreyes.finscope.model.query.PushMessage;
 import com.sreyes.finscope.repository.NotificationRepository;
@@ -64,6 +65,7 @@ class NotificationServiceImplTest {
     when(repository.findRecurringDueOn(any(), any(), any())).thenReturn(Flux.empty());
     when(repository.findBudgetsReaching(anyInt(), anyInt(), any(), any(), anyDouble()))
         .thenReturn(Flux.empty());
+    when(repository.findLoanInstallmentsDue(any(), any())).thenReturn(Flux.empty());
     when(repository.purgeLogBefore(any())).thenReturn(Mono.just(0L));
     when(repository.claim(anyLong(), anyString(), anyLong(), anyString()))
         .thenReturn(Mono.just(true));
@@ -187,5 +189,61 @@ class NotificationServiceImplTest {
         YearMonth.of(2026, 9));
     assertThat(message.title()).isEqualTo("Comida: llevas el 99 % del presupuesto");
     assertThat(message.body()).isEqualTo("S/ 399.90 de S/ 400.00 en setiembre.");
+  }
+
+  private static DueLoanNotice loanInstallment(LocalDate dueDate, int count) {
+    return new DueLoanNotice(USER_ID, 21L, 40L, "Juan", "PEN", 2, count, dueDate,
+        new BigDecimal("250.00"));
+  }
+
+  @Test
+  @DisplayName("Busca cuotas de préstamos en los tres días previos, hoy y ayer")
+  void looksForLoanInstallments() {
+    StepVerifier.create(at("2026-09-15T15:00:00Z").runScheduled()).verifyComplete();
+
+    verify(repository).findLoanInstallmentsDue(LocalDate.of(2026, 9, 16),
+        LocalDate.of(2026, 9, 18));
+    verify(repository).findLoanInstallmentsDue(LocalDate.of(2026, 9, 15),
+        LocalDate.of(2026, 9, 15));
+    verify(repository).findLoanInstallmentsDue(LocalDate.of(2026, 9, 14),
+        LocalDate.of(2026, 9, 14));
+  }
+
+  @Test
+  @DisplayName("Avisa de una cuota que se acerca y la apunta por cuota y fecha")
+  void notifiesLoanDueSoon() {
+    LocalDate dueDate = LocalDate.of(2026, 9, 18);
+    when(repository.findLoanInstallmentsDue(LocalDate.of(2026, 9, 16), dueDate))
+        .thenReturn(Flux.just(loanInstallment(dueDate, 4)));
+
+    StepVerifier.create(at("2026-09-15T15:00:00Z").runScheduled()).verifyComplete();
+
+    verify(repository).claim(USER_ID, "LOAN_DUE_SOON", 40L, "2026-09-18");
+    ArgumentCaptor<PushMessage> message = ArgumentCaptor.forClass(PushMessage.class);
+    verify(pushService).notifyUser(eq(USER_ID), message.capture());
+    assertThat(message.getValue().title()).isEqualTo("En 3 días te toca cobrarle a Juan");
+    assertThat(message.getValue().body()).isEqualTo(
+        "S/ 250.00 · cuota 2 de 4. Regístralo cuando te pague.");
+    assertThat(message.getValue().url()).isEqualTo("/loans?prestamo=21");
+  }
+
+  @Test
+  @DisplayName("Los textos de préstamo cambian con el día y omiten la cuota si es única")
+  void composesLoanMessages() {
+    LocalDate today = LocalDate.of(2026, 9, 15);
+
+    PushMessage tomorrow = NotificationServiceImpl.loanMessage(
+        loanInstallment(today.plusDays(1), 1), "LOAN_DUE_SOON", today);
+    assertThat(tomorrow.title()).isEqualTo("Mañana te toca cobrarle a Juan");
+    assertThat(tomorrow.body()).isEqualTo("S/ 250.00. Regístralo cuando te pague.");
+
+    PushMessage due = NotificationServiceImpl.loanMessage(
+        loanInstallment(today, 3), "LOAN_DUE_TODAY", today);
+    assertThat(due.title()).isEqualTo("Hoy te toca cobrarle a Juan");
+
+    PushMessage overdue = NotificationServiceImpl.loanMessage(
+        loanInstallment(today.minusDays(1), 3), "LOAN_OVERDUE", today);
+    assertThat(overdue.title()).isEqualTo("Juan no te pagó ayer");
+    assertThat(overdue.body()).isEqualTo("S/ 250.00 · cuota 2 de 3. Sigue pendiente.");
   }
 }
