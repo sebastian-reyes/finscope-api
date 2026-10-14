@@ -50,10 +50,16 @@ info:
     movimientos fijos vencen hoy o manana y que presupuestos del mes llegaron a su limite, y
     manda el aviso aunque la aplicacion este cerrada. Ningun aviso se repite.
 
+    El prestamo es dinero que el usuario dio a otra persona y espera recuperar. Tampoco es
+    un movimiento: prestar no es gastar ni cobrar es ingresar, asi que no escribe ninguna
+    transaccion y no altera el analisis. Lleva un plan de cuotas, que puede ser una sola, y
+    lo devuelto se aplica en orden a la cuota mas antigua. Puede ganar un interes, siempre
+    como monto fijo, o ninguno.
+
     Todos los recursos financieros pertenecen al usuario autenticado y estan aislados
     entre usuarios. Salvo los endpoints de autenticacion, todas las operaciones exigen
     un token de acceso.
-  version: 6.11.0
+  version: 6.12.0
 servers:
   - url: /
     description: Servidor local
@@ -74,6 +80,8 @@ tags:
     description: Presupuesto mensual por categoria y su avance
   - name: recurring
     description: Movimientos que se repiten y su confirmacion mes a mes
+  - name: loans
+    description: Dinero prestado a otras personas, su plan de devolucion y lo devuelto
   - name: summary
     description: Agregados financieros calculados sobre las transacciones
   - name: push
@@ -1350,6 +1358,211 @@ paths:
         "429":
           $ref: "#/components/responses/TooManyRequests"
 
+  /loans:
+    get:
+      tags: [loans]
+      summary: Lista los prestamos del usuario
+      description: |
+        Devuelve todos los prestamos, abiertos, saldados y cerrados, cada uno con su plan de
+        cuotas, lo devuelto y su estado de hoy. Van primero los que tienen algo vencido,
+        despues los abiertos por su proxima cuota y al final los saldados y cerrados.
+      operationId: listLoans
+      responses:
+        "200":
+          description: Prestamos del usuario
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LoanResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    post:
+      tags: [loans]
+      summary: Registra un prestamo
+      description: |
+        Registra a quien se le presto, cuanto y como lo devuelve. No crea ningun movimiento:
+        prestar no es gastar, y si entrara como egreso el analisis del mes contaria como
+        gasto un dinero que sigue siendo del usuario.
+
+        Las cuotas deben sumar exactamente capital mas interes y ninguna puede vencer antes
+        del dia del prestamo. Un prestamo que se devuelve de una vez lleva una sola cuota.
+      operationId: createLoan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveLoanRequest"
+      responses:
+        "201":
+          description: Prestamo registrado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoanResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /loans/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathId"
+    get:
+      tags: [loans]
+      summary: Devuelve un prestamo
+      operationId: getLoan
+      responses:
+        "200":
+          description: Prestamo con sus cuotas y lo devuelto
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoanResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    patch:
+      tags: [loans]
+      summary: Modifica un prestamo
+      description: |
+        Solo se aplican los campos presentes. Si llegan cuotas reemplazan el plan entero, y
+        si cambia el capital o el interes hay que mandar tambien el plan nuevo: las cuotas
+        tienen que seguir sumando el total.
+
+        El total no puede quedar por debajo de lo ya devuelto. closed en true da el prestamo
+        por cerrado aunque falte dinero, que es lo que se hace al perdonar el resto, y deja
+        de avisar; en false lo vuelve a abrir.
+      operationId: updateLoan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateLoanRequest"
+      responses:
+        "200":
+          description: Prestamo actualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoanResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    delete:
+      tags: [loans]
+      summary: Elimina un prestamo
+      description: |
+        Borra el prestamo con sus cuotas y sus pagos. Para dejar de seguir uno que no se va
+        a recuperar es mejor cerrarlo: conserva lo que si se devolvio.
+      operationId: deleteLoan
+      responses:
+        "204":
+          description: Prestamo eliminado
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /loans/{id}/payments:
+    parameters:
+      - $ref: "#/components/parameters/PathId"
+    post:
+      tags: [loans]
+      summary: Registra lo que el deudor devolvio
+      description: |
+        El pago no se ata a ninguna cuota: se aplica en orden a la mas antigua que siga
+        pendiente. Un pago parcial deja esa cuota a medias y uno mayor que la cuota cubre
+        tambien las siguientes.
+
+        Falla con conflicto si supera lo que falta por devolver.
+      operationId: createLoanPayment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveLoanPaymentRequest"
+      responses:
+        "201":
+          description: Pago registrado; devuelve el prestamo tal y como queda
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoanResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /loans/{id}/payments/{paymentId}:
+    parameters:
+      - $ref: "#/components/parameters/PathId"
+      - $ref: "#/components/parameters/LoanPaymentId"
+    delete:
+      tags: [loans]
+      summary: Elimina un pago registrado
+      description: |
+        Sirve para corregir un pago apuntado por error. Las cuotas que cubria vuelven a
+        quedar pendientes.
+      operationId: deleteLoanPayment
+      responses:
+        "200":
+          description: Pago eliminado; devuelve el prestamo tal y como queda
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoanResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
   /push/config:
     get:
       tags: [push]
@@ -1680,6 +1893,14 @@ components:
         minimum: 0.000001
         maximum: 999999.999999
 
+    LoanPaymentId:
+      name: paymentId
+      in: path
+      description: Identificador del pago dentro del prestamo
+      required: true
+      schema:
+        type: integer
+        format: int64
     SearchFilter:
       name: search
       in: query
@@ -2881,6 +3102,244 @@ components:
           minimum: 1970
           maximum: 9999
 
+    LoanStatus:
+      type: string
+      description: |
+        Estado de un prestamo hoy. No se guarda: se resuelve al leer con lo devuelto y la
+        fecha de cada cuota.
+
+        ACTIVE es que falta dinero pero nada esta vencido, OVERDUE que alguna cuota vencio
+        sin cubrirse, PAID que se devolvio todo y CLOSED que el usuario lo dio por cerrado
+        sin que se devolviera todo.
+      enum: [ACTIVE, OVERDUE, PAID, CLOSED]
+
+    LoanInstallmentStatus:
+      type: string
+      description: |
+        Estado de una cuota. Los pagos se aplican en orden a la cuota mas antigua, asi que
+        una cuota esta PAID cuando lo devuelto cubre ella y todas las anteriores, y PARTIAL
+        cuando cubre solo una parte. PENDING y OVERDUE son las que no tienen nada, antes y
+        despues de su fecha. Una cuota a medias que ya vencio sale OVERDUE.
+      enum: [PENDING, PARTIAL, OVERDUE, PAID]
+
+    LoanInstallmentResponse:
+      type: object
+      description: Una cuota del plan de devolucion con lo que ya la cubre
+      required: [id, number, dueDate, amount, paid, status]
+      properties:
+        id:
+          type: integer
+          format: int64
+        number:
+          type: integer
+          description: Orden de la cuota en el plan, desde 1
+        dueDate:
+          type: string
+          format: date
+        amount:
+          type: number
+          description: Lo que se acordo devolver en esta cuota
+        paid:
+          type: number
+          description: Parte de la cuota cubierta por lo devuelto, entre cero y amount
+        status:
+          $ref: "#/components/schemas/LoanInstallmentStatus"
+
+    LoanPaymentResponse:
+      type: object
+      description: Dinero que el deudor devolvio
+      required: [id, paidOn, amount]
+      properties:
+        id:
+          type: integer
+          format: int64
+        paidOn:
+          type: string
+          format: date
+        amount:
+          type: number
+        note:
+          type: string
+
+    LoanResponse:
+      type: object
+      description: |
+        Un prestamo con su plan de cuotas, lo devuelto y lo que falta. Las cifras derivadas
+        se calculan en la API para que la pantalla y los avisos digan lo mismo.
+      required:
+        [id, borrowerName, principal, interest, total, currency, lentOn, paid, outstanding,
+         overdueAmount, status, installments, payments]
+      properties:
+        id:
+          type: integer
+          format: int64
+        borrowerName:
+          type: string
+          description: A quien se le presto
+        principal:
+          type: number
+          description: Lo que se presto
+        interest:
+          type: number
+          description: Lo que se gana encima, como monto fijo. Cero si es sin interes.
+        total:
+          type: number
+          description: Capital mas interes, que es lo que hay que devolver
+        currency:
+          $ref: "#/components/schemas/Currency"
+        lentOn:
+          type: string
+          format: date
+          description: Dia en que se entrego el dinero
+        notes:
+          type: string
+        closedOn:
+          type: string
+          format: date
+          description: Dia en que se dio por cerrado. Solo viene si esta CLOSED.
+        paid:
+          type: number
+          description: Lo devuelto hasta hoy
+        outstanding:
+          type: number
+          description: Lo que falta por devolver. Cero si esta saldado.
+        overdueAmount:
+          type: number
+          description: Parte de lo que falta cuya cuota ya vencio
+        status:
+          $ref: "#/components/schemas/LoanStatus"
+        nextDueDate:
+          type: string
+          format: date
+          description: |
+            Fecha de la primera cuota que no esta cubierta del todo. Ausente si esta saldado
+            o cerrado.
+        nextDueAmount:
+          type: number
+          description: Lo que falta de esa cuota, que puede ser menos que su importe
+        installments:
+          type: array
+          description: Plan de devolucion en orden de cuota
+          items:
+            $ref: "#/components/schemas/LoanInstallmentResponse"
+        payments:
+          type: array
+          description: Lo devuelto, del mas reciente al mas antiguo
+          items:
+            $ref: "#/components/schemas/LoanPaymentResponse"
+
+    LoanInstallmentRequest:
+      type: object
+      description: Una cuota del plan
+      required: [dueDate, amount]
+      properties:
+        dueDate:
+          type: string
+          format: date
+          description: No puede ser anterior al dia del prestamo
+        amount:
+          type: number
+          minimum: 0
+          exclusiveMinimum: true
+
+    SaveLoanRequest:
+      type: object
+      description: Cuerpo de alta de un prestamo
+      required: [borrowerName, principal, lentOn, installments]
+      properties:
+        borrowerName:
+          type: string
+          minLength: 1
+          maxLength: 70
+        principal:
+          type: number
+          minimum: 0
+          exclusiveMinimum: true
+          maximum: 9999999999.99
+        interest:
+          type: number
+          minimum: 0
+          maximum: 9999999999.99
+          default: 0
+          description: Lo que se gana encima como monto fijo. Cero o ausente si es sin interes.
+        currency:
+          allOf:
+            - $ref: "#/components/schemas/Currency"
+          default: PEN
+        lentOn:
+          type: string
+          format: date
+        notes:
+          type: string
+          maxLength: 255
+        installments:
+          type: array
+          description: |
+            Plan de devolucion. Una sola cuota si se devuelve de una vez. Deben sumar capital
+            mas interes; se numeran en el orden de su fecha.
+          minItems: 1
+          maxItems: 120
+          items:
+            $ref: "#/components/schemas/LoanInstallmentRequest"
+
+    UpdateLoanRequest:
+      type: object
+      description: |
+        Cuerpo de modificacion de un prestamo. Solo se aplican los campos presentes. Si
+        cambia el capital o el interes, el plan de cuotas tiene que venir tambien.
+      properties:
+        borrowerName:
+          type: string
+          minLength: 1
+          maxLength: 70
+        principal:
+          type: number
+          minimum: 0
+          exclusiveMinimum: true
+          maximum: 9999999999.99
+        interest:
+          type: number
+          minimum: 0
+          maximum: 9999999999.99
+        currency:
+          $ref: "#/components/schemas/Currency"
+        lentOn:
+          type: string
+          format: date
+        notes:
+          type: string
+          maxLength: 255
+          description: Texto vacio para quitar la nota
+        installments:
+          type: array
+          description: Si viene reemplaza el plan entero
+          minItems: 1
+          maxItems: 120
+          items:
+            $ref: "#/components/schemas/LoanInstallmentRequest"
+        closed:
+          type: boolean
+          description: |
+            true da el prestamo por cerrado con fecha de hoy aunque falte dinero; false lo
+            vuelve a abrir.
+
+    SaveLoanPaymentRequest:
+      type: object
+      description: Dinero que el deudor devolvio
+      required: [paidOn, amount]
+      properties:
+        paidOn:
+          type: string
+          format: date
+        amount:
+          type: number
+          minimum: 0
+          exclusiveMinimum: true
+          maximum: 9999999999.99
+        note:
+          type: string
+          maxLength: 140
+
     PushConfigResponse:
       type: object
       description: Disponibilidad de los avisos al telefono
@@ -2925,7 +3384,7 @@ components:
     NotificationPreferencesResponse:
       type: object
       description: Que avisos quiere recibir el usuario en sus dispositivos
-      required: [recurringDue, budgetLimit]
+      required: [recurringDue, budgetLimit, loanDue]
       properties:
         recurringDue:
           type: boolean
@@ -2933,6 +3392,11 @@ components:
         budgetLimit:
           type: boolean
           description: Avisar cuando un presupuesto del mes llega al 90 % y cuando lo supera
+        loanDue:
+          type: boolean
+          description: |
+            Avisar de las cuotas de un prestamo por cobrar: en los tres dias previos, el dia
+            que vencen y al dia siguiente si siguen sin cubrirse
 
     UpdateNotificationPreferencesRequest:
       type: object
@@ -2941,6 +3405,8 @@ components:
         recurringDue:
           type: boolean
         budgetLimit:
+          type: boolean
+        loanDue:
           type: boolean
 
     PushTestResponse:

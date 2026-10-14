@@ -6,8 +6,9 @@ import reactor.core.publisher.Mono;
  * Decide qué avisos programados tocan y los manda.
  *
  * Es lo único de la API que trabaja sin que nadie lo pida: lo dispara una tarea cada hora.
- * Cada pasada mira qué fijos vencen hoy o mañana y qué presupuestos del mes llegaron a su
- * umbral, y avisa de lo que todavía no se había avisado. Repetir una pasada no repite avisos.
+ * Cada pasada mira qué fijos vencen hoy o mañana, qué presupuestos del mes llegaron a su
+ * umbral y qué cuotas de préstamos por cobrar se acercan, vencen o quedaron sin pagar, y
+ * avisa de lo que todavía no se había avisado. Repetir una pasada no repite avisos.
  */
 public interface NotificationService {
 

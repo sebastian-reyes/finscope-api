@@ -1,9 +1,11 @@
 package com.sreyes.finscope.repository;
 
 import com.sreyes.finscope.model.query.BudgetLimitNotice;
+import com.sreyes.finscope.model.query.DueLoanNotice;
 import com.sreyes.finscope.model.query.DueRecurringNotice;
 import com.sreyes.finscope.model.query.NotificationSettings;
 import com.sreyes.finscope.util.query.RecurringSql;
+import io.r2dbc.spi.Readable;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -101,6 +103,46 @@ public class NotificationRepository {
       ORDER BY b.user_id, b.id_budget
       """;
 
+  /**
+   * Cuotas de préstamos sin cubrir que vencen dentro de un rango de días, de los usuarios
+   * avisables.
+   *
+   * <p>Lo devuelto se aplica en orden de cuota, igual que en
+   * {@link com.sreyes.finscope.util.rules.LoanRules}: una cuota sigue pendiente mientras lo
+   * acumulado hasta ella supera lo devuelto, y lo que falta de ella es esa diferencia, sin
+   * pasar de su importe. Así el aviso dice «faltan 50» de una cuota a medias, igual que la
+   * pantalla.</p>
+   *
+   * <p>Las ventanas se calculan solo para los préstamos con alguna cuota en el rango, que es
+   * lo que deja usar el índice por fecha en lugar de recorrer todas las cuotas.</p>
+   */
+  private static final String LOAN_INSTALLMENTS_DUE = """
+      SELECT l.user_id, l.id_loan, l.borrower_name, l.currency,
+             i.id_loan_installment, i.number, i.installment_count, i.due_date,
+             LEAST(i.amount, i.cumulative - COALESCE(p.paid, 0)) AS pending
+      FROM loans l
+      INNER JOIN (SELECT li.id_loan_installment, li.loan_id, li.number, li.due_date, li.amount,
+                         SUM(li.amount) OVER (PARTITION BY li.loan_id ORDER BY li.number)
+                             AS cumulative,
+                         COUNT(*) OVER (PARTITION BY li.loan_id) AS installment_count
+                  FROM loan_installments li
+                  WHERE li.loan_id IN (SELECT d.loan_id
+                                       FROM loan_installments d
+                                       WHERE d.due_date BETWEEN :from AND :to)) i
+              ON i.loan_id = l.id_loan
+      LEFT JOIN (SELECT lp.loan_id, SUM(lp.amount) AS paid
+                 FROM loan_payments lp
+                 GROUP BY lp.loan_id) p
+             ON p.loan_id = l.id_loan
+      LEFT JOIN notification_preferences np ON np.user_id = l.user_id
+      WHERE i.due_date BETWEEN :from AND :to
+        AND i.cumulative > COALESCE(p.paid, 0)
+        AND l.closed_on IS NULL
+        AND COALESCE(np.loan_due, true)
+        AND EXISTS (SELECT 1 FROM push_subscriptions ps WHERE ps.user_id = l.user_id)
+      ORDER BY l.user_id, i.due_date, i.id_loan_installment
+      """;
+
   private final DatabaseClient databaseClient;
 
   /**
@@ -111,14 +153,12 @@ public class NotificationRepository {
    */
   public Mono<NotificationSettings> findSettings(Long userId) {
     return databaseClient.sql("""
-            SELECT recurring_due, budget_limit
+            SELECT recurring_due, budget_limit, loan_due
             FROM notification_preferences
             WHERE user_id = :userId
             """)
         .bind("userId", userId)
-        .map(row -> new NotificationSettings(
-            Boolean.TRUE.equals(row.get("recurring_due", Boolean.class)),
-            Boolean.TRUE.equals(row.get("budget_limit", Boolean.class))))
+        .map(NotificationRepository::toSettings)
         .one()
         .defaultIfEmpty(NotificationSettings.DEFAULTS);
   }
@@ -130,17 +170,20 @@ public class NotificationRepository {
    * @param userId       identificador del usuario
    * @param recurringDue avisos de fijos, o nulo para no tocarlo
    * @param budgetLimit  avisos de presupuestos, o nulo para no tocarlo
+   * @param loanDue      avisos de préstamos por cobrar, o nulo para no tocarlo
    * @return las preferencias tal y como quedan
    */
   public Mono<NotificationSettings> saveSettings(Long userId, Boolean recurringDue,
-                                                 Boolean budgetLimit) {
+                                                 Boolean budgetLimit, Boolean loanDue) {
     DatabaseClient.GenericExecuteSpec spec = databaseClient.sql("""
-            INSERT INTO notification_preferences (user_id, recurring_due, budget_limit)
-            VALUES (:userId, COALESCE(:recurringDue, true), COALESCE(:budgetLimit, true))
+            INSERT INTO notification_preferences (user_id, recurring_due, budget_limit, loan_due)
+            VALUES (:userId, COALESCE(:recurringDue, true), COALESCE(:budgetLimit, true),
+                    COALESCE(:loanDue, true))
             ON CONFLICT (user_id) DO UPDATE
             SET recurring_due = COALESCE(:recurringDue, notification_preferences.recurring_due),
-                budget_limit = COALESCE(:budgetLimit, notification_preferences.budget_limit)
-            RETURNING recurring_due, budget_limit
+                budget_limit = COALESCE(:budgetLimit, notification_preferences.budget_limit),
+                loan_due = COALESCE(:loanDue, notification_preferences.loan_due)
+            RETURNING recurring_due, budget_limit, loan_due
             """)
         .bind("userId", userId);
     spec = recurringDue == null
@@ -149,10 +192,11 @@ public class NotificationRepository {
     spec = budgetLimit == null
         ? spec.bindNull("budgetLimit", Boolean.class)
         : spec.bind("budgetLimit", budgetLimit);
+    spec = loanDue == null
+        ? spec.bindNull("loanDue", Boolean.class)
+        : spec.bind("loanDue", loanDue);
     return spec
-        .map(row -> new NotificationSettings(
-            Boolean.TRUE.equals(row.get("recurring_due", Boolean.class)),
-            Boolean.TRUE.equals(row.get("budget_limit", Boolean.class))))
+        .map(NotificationRepository::toSettings)
         .one();
   }
 
@@ -209,6 +253,31 @@ public class NotificationRepository {
             row.get("currency", String.class),
             row.get("amount", BigDecimal.class),
             row.get("spent", BigDecimal.class)))
+        .all();
+  }
+
+  /**
+   * Obtiene las cuotas de préstamos sin cubrir que vencen entre dos días, ambos incluidos,
+   * de todos los usuarios avisables. Los préstamos cerrados no avisan.
+   *
+   * @param from primer día del rango
+   * @param to   último día del rango
+   * @return flujo con las cuotas de las que avisar
+   */
+  public Flux<DueLoanNotice> findLoanInstallmentsDue(LocalDate from, LocalDate to) {
+    return databaseClient.sql(LOAN_INSTALLMENTS_DUE)
+        .bind("from", from)
+        .bind("to", to)
+        .map(row -> new DueLoanNotice(
+            row.get("user_id", Long.class),
+            row.get("id_loan", Long.class),
+            row.get("id_loan_installment", Long.class),
+            row.get("borrower_name", String.class),
+            row.get("currency", String.class),
+            row.get("number", Integer.class),
+            row.get("installment_count", Integer.class),
+            row.get("due_date", LocalDate.class),
+            row.get("pending", BigDecimal.class)))
         .all();
   }
 
@@ -277,5 +346,12 @@ public class NotificationRepository {
         .bind("before", before)
         .fetch()
         .rowsUpdated();
+  }
+
+  private static NotificationSettings toSettings(Readable row) {
+    return new NotificationSettings(
+        Boolean.TRUE.equals(row.get("recurring_due", Boolean.class)),
+        Boolean.TRUE.equals(row.get("budget_limit", Boolean.class)),
+        Boolean.TRUE.equals(row.get("loan_due", Boolean.class)));
   }
 }

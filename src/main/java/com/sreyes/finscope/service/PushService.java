@@ -61,10 +61,11 @@ public interface PushService {
    * @param userId       identificador del usuario
    * @param recurringDue avisos de fijos por vencer
    * @param budgetLimit  avisos de presupuestos al límite
+   * @param loanDue      avisos de cuotas de préstamos por cobrar
    * @return las preferencias tal y como quedan
    */
   Mono<NotificationSettings> updateSettings(Long userId, Boolean recurringDue,
-                                            Boolean budgetLimit);
+                                            Boolean budgetLimit, Boolean loanDue);
 
   /**
    * Manda un aviso de prueba a todos los dispositivos del usuario.

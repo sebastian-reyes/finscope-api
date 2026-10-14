@@ -1,0 +1,28 @@
+-- Reverso de V13__loans.sql.
+--
+-- No lo aplica Flyway: se guarda como texto para poder deshacer el cambio a mano si hiciera
+-- falta, igual que el resto de reversos del proyecto.
+--
+-- Se pierden todos los prestamos, sus cuotas y lo que se registro como devuelto. Los apuntes
+-- de avisos de prestamos se borran antes de restaurar la restriccion, que si no los
+-- rechazaria.
+
+DELETE FROM notification_log
+WHERE kind IN ('LOAN_DUE_SOON', 'LOAN_DUE_TODAY', 'LOAN_OVERDUE');
+
+ALTER TABLE notification_log
+    DROP CONSTRAINT chk_notification_log_kind;
+
+ALTER TABLE notification_log
+    ADD CONSTRAINT chk_notification_log_kind CHECK (kind IN (
+        'RECURRING_DUE_TOMORROW', 'RECURRING_DUE_TODAY',
+        'BUDGET_NEAR_LIMIT', 'BUDGET_OVER_LIMIT'));
+
+ALTER TABLE notification_preferences
+    DROP COLUMN IF EXISTS loan_due;
+
+DROP TABLE IF EXISTS loan_payments;
+
+DROP TABLE IF EXISTS loan_installments;
+
+DROP TABLE IF EXISTS loans;

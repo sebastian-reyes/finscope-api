@@ -2,6 +2,7 @@ package com.sreyes.finscope.service.impl;
 
 import com.sreyes.finscope.model.query.BudgetLimitNotice;
 import com.sreyes.finscope.model.query.DateRange;
+import com.sreyes.finscope.model.query.DueLoanNotice;
 import com.sreyes.finscope.model.query.DueRecurringNotice;
 import com.sreyes.finscope.model.query.PushMessage;
 import com.sreyes.finscope.repository.NotificationRepository;
@@ -19,6 +20,7 @@ import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.time.ZonedDateTime;
 import java.time.format.TextStyle;
+import java.time.temporal.ChronoUnit;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -48,6 +50,12 @@ public class NotificationServiceImpl implements NotificationService {
   static final String RECURRING_DUE_TODAY = "RECURRING_DUE_TODAY";
   static final String BUDGET_NEAR_LIMIT = "BUDGET_NEAR_LIMIT";
   static final String BUDGET_OVER_LIMIT = "BUDGET_OVER_LIMIT";
+  static final String LOAN_DUE_SOON = "LOAN_DUE_SOON";
+  static final String LOAN_DUE_TODAY = "LOAN_DUE_TODAY";
+  static final String LOAN_OVERDUE = "LOAN_OVERDUE";
+
+  /** Con cuántos días de antelación se avisa de una cuota de préstamo. */
+  static final int LOAN_NOTICE_DAYS = 3;
 
   /** Cuánto se conserva el registro de avisos enviados. */
   private static final int LOG_RETENTION_DAYS = 90;
@@ -74,6 +82,10 @@ public class NotificationServiceImpl implements NotificationService {
       return notifyRecurring(today.plusDays(1), RECURRING_DUE_TOMORROW)
           .then(notifyRecurring(today, RECURRING_DUE_TODAY))
           .then(notifyBudgets(YearMonth.from(today)))
+          .then(notifyLoans(today.plusDays(1), today.plusDays(LOAN_NOTICE_DAYS), LOAN_DUE_SOON,
+              today))
+          .then(notifyLoans(today, today, LOAN_DUE_TODAY, today))
+          .then(notifyLoans(today.minusDays(1), today.minusDays(1), LOAN_OVERDUE, today))
           .then(notificationRepository
               .purgeLogBefore(LocalDateTime.now(clock).minusDays(LOG_RETENTION_DAYS)))
           .then();
@@ -115,6 +127,20 @@ public class NotificationServiceImpl implements NotificationService {
               .then(deliver(notice.userId(), BUDGET_OVER_LIMIT, notice.budgetId(), periodKey,
                   budgetMessage(notice, true, month)));
         })
+        .then();
+  }
+
+  /**
+   * Avisa de las cuotas de préstamos sin cubrir que vencen entre dos días.
+   *
+   * <p>El aviso de «se acerca» cubre los tres días previos y no solo el tercero: un préstamo
+   * registrado hoy con la primera cuota pasado mañana también debe avisar. Se apunta una sola
+   * vez por cuota, así que entrar en la ventana el día 3 no lo repite el 2 ni el 1.</p>
+   */
+  private Mono<Void> notifyLoans(LocalDate from, LocalDate to, String kind, LocalDate today) {
+    return notificationRepository.findLoanInstallmentsDue(from, to)
+        .concatMap(notice -> deliver(notice.userId(), kind, notice.installmentId(),
+            notice.dueDate().toString(), loanMessage(notice, kind, today)))
         .then();
   }
 
@@ -178,6 +204,32 @@ public class NotificationServiceImpl implements NotificationService {
         + money(notice.amount(), notice.currency()) + " en " + monthName + ".";
     return new PushMessage(title, body, "/budgets?mes=" + month,
         "budget-" + notice.budgetId() + "-" + month);
+  }
+
+  /**
+   * Compone el aviso de una cuota de préstamo. Con una sola cuota no se habla de cuotas: «te
+   * devuelve 500» se entiende mejor que «cuota 1 de 1».
+   */
+  static PushMessage loanMessage(DueLoanNotice notice, String kind, LocalDate today) {
+    String name = notice.borrowerName().strip();
+    String title;
+    if (LOAN_OVERDUE.equals(kind)) {
+      title = name + " no te pagó ayer";
+    } else if (LOAN_DUE_TODAY.equals(kind)) {
+      title = "Hoy te toca cobrarle a " + name;
+    } else {
+      long days = ChronoUnit.DAYS.between(today, notice.dueDate());
+      title = (days == 1 ? "Mañana" : "En " + days + " días") + " te toca cobrarle a " + name;
+    }
+    String installment = notice.installmentCount() > 1
+        ? " · cuota " + notice.number() + " de " + notice.installmentCount()
+        : "";
+    String tail = LOAN_OVERDUE.equals(kind)
+        ? ". Sigue pendiente."
+        : ". Regístralo cuando te pague.";
+    String body = money(notice.pending(), notice.currency()) + installment + tail;
+    return new PushMessage(title, body, "/loans?prestamo=" + notice.loanId(),
+        "loan-" + notice.installmentId());
   }
 
   private static int percent(BigDecimal spent, BigDecimal amount) {
