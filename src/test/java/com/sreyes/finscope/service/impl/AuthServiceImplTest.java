@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -61,6 +62,7 @@ import reactor.test.StepVerifier;
 class AuthServiceImplTest {
 
   private static final Long USER_ID = 7L;
+  private static final Long SUCCESSOR_ID = 40L;
   private static final String EMAIL = "sebastian@example.com";
   private static final String PASSWORD = "una-contrasena-larga";
 
@@ -294,14 +296,80 @@ class AuthServiceImplTest {
     when(refreshTokenRepository.findByTokenHash(anyString())).thenReturn(Mono.just(
         refreshToken(true, LocalDateTime.now().plusDays(1), LocalDateTime.now())));
     when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(invocation ->
-        recording(inTransaction, "newToken", () -> invocation.getArgument(0)));
+        recording(inTransaction, "newToken", () -> {
+          RefreshToken token = invocation.getArgument(0);
+          token.setId(SUCCESSOR_ID);
+          return token;
+        }));
+    when(refreshTokenRepository.markReplaced(anyLong(), anyLong(), any(LocalDateTime.class)))
+        .thenAnswer(invocation -> recording(inTransaction, "markReplaced", () -> 1L));
     givenActiveUser();
 
     StepVerifier.create(authService.refresh("un-token-de-refresco"))
         .assertNext(auth -> assertNotNull(auth.getRefreshToken()))
         .verifyComplete();
 
-    assertEquals(Map.of("rotate", true, "newToken", true), inTransaction);
+    assertEquals(Map.of("rotate", true, "newToken", true, "markReplaced", true), inTransaction);
+    verify(refreshTokenRepository).markReplaced(eq(1L), eq(SUCCESSOR_ID), any(LocalDateTime.class));
+    verify(refreshTokenRepository, never()).revokeAllByUserId(anyLong());
+  }
+
+  @Test
+  @DisplayName("Rehace la renovación cuyo sustituto nunca se usó, sin revocar la cuenta")
+  void recoversLostRefreshResponse() {
+    when(refreshTokenRepository.rotate(anyString(), any(LocalDateTime.class)))
+        .thenReturn(Mono.just(0L));
+    when(refreshTokenRepository.findByTokenHash(anyString())).thenReturn(Mono.just(
+        refreshToken(true, LocalDateTime.now().plusDays(1), LocalDateTime.now().minusHours(3),
+            SUCCESSOR_ID)));
+    when(refreshTokenRepository.reclaim(SUCCESSOR_ID)).thenReturn(Mono.just(1L));
+    givenTokensPersist();
+    givenActiveUser();
+
+    StepVerifier.create(authService.refresh("un-token-de-refresco"))
+        .assertNext(auth -> assertNotNull(auth.getRefreshToken()))
+        .verifyComplete();
+
+    verify(refreshTokenRepository).markReplaced(eq(1L), eq(SUCCESSOR_ID + 1),
+        any(LocalDateTime.class));
+    verify(refreshTokenRepository, never()).revokeAllByUserId(anyLong());
+  }
+
+  @Test
+  @DisplayName("Rechaza un token cuyo sustituto ya se usó y revoca los del usuario")
+  void rejectsReusedTokenWhoseSuccessorWasUsed() {
+    RefreshToken stale = refreshToken(true, LocalDateTime.now().plusDays(1),
+        LocalDateTime.now().minusHours(3), SUCCESSOR_ID);
+    when(refreshTokenRepository.rotate(anyString(), any(LocalDateTime.class)))
+        .thenReturn(Mono.just(0L));
+    when(refreshTokenRepository.findByTokenHash(anyString())).thenReturn(Mono.just(stale));
+    when(refreshTokenRepository.reclaim(SUCCESSOR_ID)).thenReturn(Mono.just(0L));
+    when(refreshTokenRepository.revokeAllByUserId(USER_ID)).thenReturn(Mono.just(2L));
+
+    StepVerifier.create(authService.refresh("un-token-de-refresco"))
+        .expectError(InvalidRefreshTokenException.class)
+        .verify();
+
+    verify(refreshTokenRepository).revokeAllByUserId(USER_ID);
+  }
+
+  @Test
+  @DisplayName("Si otra petición rehízo la renovación a la vez, esta se atiende como carrera")
+  void toleratesConcurrentRecovery() {
+    when(refreshTokenRepository.rotate(anyString(), any(LocalDateTime.class)))
+        .thenReturn(Mono.just(0L));
+    when(refreshTokenRepository.findByTokenHash(anyString()))
+        .thenReturn(Mono.just(refreshToken(true, LocalDateTime.now().plusDays(1),
+            LocalDateTime.now().minusHours(3), SUCCESSOR_ID)))
+        .thenReturn(Mono.just(refreshToken(true, LocalDateTime.now().plusDays(1),
+            LocalDateTime.now().minusSeconds(1), SUCCESSOR_ID + 1)));
+    when(refreshTokenRepository.reclaim(SUCCESSOR_ID)).thenReturn(Mono.just(0L));
+    givenActiveUser();
+
+    StepVerifier.create(authService.refresh("un-token-de-refresco"))
+        .assertNext(auth -> assertNotNull(auth.getRefreshToken()))
+        .verifyComplete();
+
     verify(refreshTokenRepository, never()).revokeAllByUserId(anyLong());
   }
 
@@ -603,8 +671,27 @@ class AuthServiceImplTest {
    */
   private RefreshToken refreshToken(boolean revoked, LocalDateTime expiresAt,
                                     LocalDateTime rotatedAt) {
+    return refreshToken(revoked, expiresAt, rotatedAt, null);
+  }
+
+  private RefreshToken refreshToken(boolean revoked, LocalDateTime expiresAt,
+                                    LocalDateTime rotatedAt, Long replacedBy) {
     return new RefreshToken(1L, USER_ID, "hash", expiresAt, revoked, LocalDateTime.now(),
-        rotatedAt);
+        rotatedAt, replacedBy);
+  }
+
+  /**
+   * Hace que guardar un token le asigne identificador, como la base, y que anotar su
+   * sustituto funcione.
+   */
+  private void givenTokensPersist() {
+    when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(invocation -> {
+      RefreshToken token = invocation.getArgument(0);
+      token.setId(SUCCESSOR_ID + 1);
+      return Mono.just(token);
+    });
+    when(refreshTokenRepository.markReplaced(anyLong(), anyLong(), any(LocalDateTime.class)))
+        .thenReturn(Mono.just(1L));
   }
 
   /**

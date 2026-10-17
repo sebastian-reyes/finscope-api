@@ -41,6 +41,35 @@ public interface RefreshTokenRepository extends R2dbcRepository<RefreshToken, Lo
   Mono<Long> rotate(String tokenHash, LocalDateTime now);
 
   /**
+   * Anota qué token sustituye a otro y cuándo. La fecha se vuelve a fijar porque, al rehacer
+   * una renovación perdida, abre de nuevo el margen de renovación concurrente: una segunda
+   * petición con el mismo token que llegue a la vez se atiende como carrera y no como robo.
+   *
+   * @param id          token rotado
+   * @param successorId token emitido en su lugar
+   * @param now         momento de la rotación
+   * @return número de filas actualizadas
+   */
+  @Modifying
+  @Query("UPDATE refresh_tokens SET replaced_by = :successorId, rotated_at = :now "
+      + "WHERE id_refresh_token = :id")
+  Mono<Long> markReplaced(Long id, Long successorId, LocalDateTime now);
+
+  /**
+   * Anula un sustituto que nunca llegó a usarse, para emitir otro en su lugar.
+   * Es la reclamación atómica de una renovación perdida: de dos peticiones que lo intenten a
+   * la vez solo una encuentra el sustituto vigente. Le quita además la marca de rotación,
+   * como a cualquier token revocado sin rotar, para que no pueda volver a aceptarse.
+   *
+   * @param successorId token emitido en la renovación cuya respuesta se perdió
+   * @return 1 si seguía sin usar y esta petición lo anuló, 0 si ya se había usado o revocado
+   */
+  @Modifying
+  @Query("UPDATE refresh_tokens SET revoked = TRUE, rotated_at = NULL "
+      + "WHERE id_refresh_token = :successorId AND NOT revoked")
+  Mono<Long> reclaim(Long successorId);
+
+  /**
    * Revoca de una vez todos los tokens vigentes de un usuario.
    * Se usa cuando se presenta un token ya consumido: como cada renovación entrega uno
    * nuevo, ver dos veces el mismo significa que hay una copia en circulación, y sin saber

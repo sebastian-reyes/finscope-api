@@ -65,8 +65,11 @@ finscope:
     jwt:
       issuer: ${JWT_ISSUER:finscope-api}
       audience: ${JWT_AUDIENCE:finscope-web}
-      access-token-ttl: ${JWT_ACCESS_TOKEN_TTL:15m}
-      refresh-token-ttl: ${JWT_REFRESH_TOKEN_TTL:30d}
+      # Cada renovacion entrega un refresco nuevo con la vigencia entera, asi que solo se pide
+      # volver a entrar tras 90 dias sin abrir la aplicacion. El acceso dura una hora: menos
+      # renovaciones son menos ocasiones de perder una respuesta por el camino.
+      access-token-ttl: ${JWT_ACCESS_TOKEN_TTL:1h}
+      refresh-token-ttl: ${JWT_REFRESH_TOKEN_TTL:90d}
       # Un token recien rotado se sigue aceptando este tiempo: dos pestanas que renuevan a la
       # vez con el mismo token no son un robo. Pasado el margen, reusarlo revoca la cuenta.
       refresh-reuse-grace: ${JWT_REFRESH_REUSE_GRACE:30s}

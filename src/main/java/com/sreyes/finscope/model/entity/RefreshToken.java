@@ -46,4 +46,12 @@ public class RefreshToken {
    */
   @Column("rotated_at")
   private LocalDateTime rotatedAt;
+
+  /**
+   * Token que se emitió en su lugar al rotarlo, o nulo si no se rotó o la rotación fue la
+   * segunda mitad de una carrera. Permite saber si una renovación perdida se puede rehacer:
+   * mientras el sustituto no se haya usado, nadie más ha seguido la cadena.
+   */
+  @Column("replaced_by")
+  private Long replacedBy;
 }
