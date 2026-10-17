@@ -425,8 +425,8 @@ a partir de las excepciones de
 | Protección | Cómo |
 | --- | --- |
 | **Contraseñas** | BCrypt, ejecutado en `boundedElastic` porque es lento por diseño y bloquear con él convertiría un aluvión de intentos en una caída |
-| **Token de acceso** | JWT HS256 con el algoritmo **fijado**, para que la cabecera del token no pueda elegir otro. Se comprueban emisor, destinatario, caducidad y presencia del sujeto. Vive 15 minutos |
-| **Token de refresco** | De un solo uso, guardado solo como hash y **rotado** en cada renovación. Vive 30 días |
+| **Token de acceso** | JWT HS256 con el algoritmo **fijado**, para que la cabecera del token no pueda elegir otro. Se comprueban emisor, destinatario, caducidad y presencia del sujeto. Vive 1 hora |
+| **Token de refresco** | De un solo uso, guardado solo como hash y **rotado** en cada renovación. Vive 90 días desde la última renovación. Si la respuesta de una renovación se pierde, el token viejo puede rehacerla mientras su sustituto no se haya usado; si ya se usó, se revocan todos los de la cuenta |
 | **Aislamiento** | Toda consulta privada lleva `AND user_id = :userId`, con el identificador sacado del `sub` del token. Lo ajeno responde 404 |
 | **Cupo por origen** | 20 peticiones/minuto en `/auth/*`, 300/minuto en el resto. Se aplica antes de la cadena de seguridad |
 | **Bloqueo por cuenta** | A los 5 intentos fallidos, con espera creciente de 30 s hasta 15 min |
